@@ -540,7 +540,7 @@ function drawFrame(now) {
   c.fillStyle=tg; c.fillRect(CX-TRIGGER_D,0,TRIGGER_D*2,CH);
 
   // Agents
-  const now=Date.now();
+  const nowMs2=Date.now();
   const agents=WORLDS[S.world].agents;
   const isSpaceWorld=S.world==='space';
 
@@ -559,7 +559,7 @@ function drawFrame(now) {
 
     // Fire ring
     if(ag.firing){
-      const ft=(now-ag.fireT)/3000;
+      const ft=(nowMs2-ag.fireT)/3000;
       if(ft>=1){ag.firing=false;}
       else {
         const ringR=ft*80;
