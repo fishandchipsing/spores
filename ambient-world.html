@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ambient world</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a08; --dim: #1a1a16; --muted: #38382f;
+    --text: #7a7a6e; --accent: #c4c4aa; --event: #e4e4cc;
+  }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'IBM Plex Mono', monospace; font-weight: 300;
+    font-size: 13px; line-height: 1.7; overflow: hidden;
+    cursor: default; user-select: none;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  }
+  #app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; padding: 36px 44px; }
+
+  #top { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 32px; border-bottom: 1px solid var(--dim); }
+  #world-selector { display: flex; gap: 28px; }
+  .world-btn {
+    background: none; border: none; color: var(--muted);
+    font-family: inherit; font-size: 10px; font-weight: 300;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer; padding: 0; transition: color 0.5s; position: relative;
+  }
+  .world-btn::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 0; height: 1px; background: var(--accent); transition: width 0.4s; }
+  .world-btn.active { color: var(--accent); }
+  .world-btn.active::after { width: 100%; }
+  .world-btn:hover { color: var(--text); }
+  #top-right { text-align: right; font-size: 10px; color: var(--muted); letter-spacing: 0.05em; line-height: 1.9; }
+  #top-right .hl { color: var(--text); }
+
+  #stream-wrap { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+  #world-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #pulse { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 3px; height: 3px; border-radius: 50%; background: var(--muted); pointer-events: none; z-index: 2; }
+  #pulse.pop { animation: pop-ripple 2.6s ease-out forwards; }
+  @keyframes pop-ripple {
+    0%   { box-shadow: 0 0 0 0 rgba(120,120,100,0.35), 0 0 0 0 rgba(120,120,100,0.12); }
+    100% { box-shadow: 0 0 0 90px rgba(120,120,100,0), 0 0 0 200px rgba(120,120,100,0); }
+  }
+  #event-log { display: flex; flex-direction: column; position: relative; z-index: 1; }
+  .ev {
+    display: grid; grid-template-columns: 52px 20px 1fr 70px;
+    gap: 10px; align-items: baseline; padding: 4px 0;
+    opacity: 0; transform: translateY(5px);
+    animation: ev-in 0.9s ease-out forwards; transition: opacity 4s ease;
+  }
+  .ev.gone { opacity: 0; }
+  @keyframes ev-in { to { opacity: 1; transform: none; } }
+  .ev-time  { font-size: 10px; color: var(--muted); text-align: right; }
+  .ev-agent { font-size: 9px; color: var(--muted); opacity: 0.55; letter-spacing: 0.06em; overflow: hidden; white-space: nowrap; }
+  .ev-desc  { font-size: 13px; font-style: italic; font-weight: 300; color: var(--event); }
+  .ev-type  { font-size: 9px; color: var(--muted); opacity: 0.35; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
+  .ev.distant     .ev-desc { color: var(--muted); font-style: normal; }
+  .ev.passing     .ev-desc { color: var(--text); }
+  .ev.moment      .ev-desc { color: var(--event); font-style: italic; }
+  .ev.shift       .ev-desc { color: var(--accent); font-style: normal; }
+  .ev.interaction .ev-desc { color: var(--accent); font-style: italic; }
+  .ev.residue     .ev-desc { color: var(--muted); font-style: italic; }
+  .ev.conflict    .ev-desc { color: #b08060; font-style: italic; }
+  .ev-silence { grid-column: 1/-1; text-align: center; color: var(--dim); font-size: 9px; letter-spacing: 0.35em; padding: 10px 0; }
+
+  #bottom { border-top: 1px solid var(--dim); padding-top: 20px; display: flex; justify-content: space-between; align-items: center; }
+  #agents-strip { display: flex; gap: 14px; flex-wrap: wrap; max-width: 60%; }
+  .agent-pill { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); opacity: 0.35; transition: opacity 0.7s, color 0.7s; white-space: nowrap; }
+  .agent-pill.lit  { opacity: 1;    color: var(--accent); }
+  .agent-pill.warm { opacity: 0.65; color: var(--text); }
+  #right-controls { display: flex; gap: 16px; align-items: center; }
+  #countdown { font-size: 10px; color: var(--dim); min-width: 30px; text-align: right; }
+  #api-stat  { font-size: 10px; color: var(--muted); }
+  .knob-wrap { display: flex; align-items: center; gap: 8px; }
+  .knob-label { font-size: 9px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .knob-slider { -webkit-appearance: none; appearance: none; width: 52px; height: 1px; background: var(--muted); outline: none; cursor: pointer; }
+  .knob-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+  #start-btn { background: none; border: 1px solid var(--muted); color: var(--text); font-family: inherit; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 18px; cursor: pointer; transition: border-color 0.3s, color 0.3s; }
+  #start-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #start-btn.on { border-color: var(--dim); color: var(--muted); }
+  #start-btn.on:hover { border-color: var(--muted); color: var(--text); }
+  #debug-overlay { position:fixed; bottom:38px; left:44px; font-size:9px; letter-spacing:0.07em; z-index:10; line-height:2.0; pointer-events:none; }
+  #debug-overlay .dk { color:var(--muted); opacity:0.45; display:inline-block; width:44px; }
+  #debug-overlay .dv { color:var(--text); transition:opacity 1.2s; }
+  #overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 50; transition: opacity 0.7s; }
+  #overlay.gone { opacity: 0; pointer-events: none; }
+  #ov-inner { width: 400px; display: flex; flex-direction: column; gap: 20px; }
+  .ov-label { font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); }
+  .ov-input { background: none; border: none; border-bottom: 1px solid var(--muted); color: var(--accent); font-family: inherit; font-size: 13px; font-weight: 300; padding: 8px 0; outline: none; width: 100%; transition: border-color 0.3s; }
+  .ov-input:focus { border-color: var(--accent); }
+  .ov-input.err   { border-color: #8a4040; }
+  .ov-note { font-size: 10px; color: var(--muted); line-height: 1.9; }
+  #key-btn { background: none; border: 1px solid var(--muted); color: var(--text); font-family: inherit; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 7px 18px; cursor: pointer; align-self: flex-start; transition: border-color 0.3s, color 0.3s; }
+  #key-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .ov-divider { border: none; border-top: 1px solid var(--dim); margin: 4px 0; }
+</style>
+</head>
+<body>
+
+
+<div id="debug-overlay">
+  <div><span class="dk">ghost</span><span class="dv" id="dbg-ghost">—</span></div>
+  <div><span class="dk">sfx</span><span class="dv" id="dbg-sfx">—</span></div>
+  <div><span class="dk">tone</span><span class="dv" id="dbg-tone">—</span></div>
+</div>
+<div id="app">
+  <div id="top">
+    <div id="world-selector">
+      <button class="world-btn active" data-world="water">water</button>
+      <button class="world-btn" data-world="city">city</button>
+      <button class="world-btn" data-world="space">space</button>
+    </div>
+    <div id="top-right">
+      <span id="tr-world" class="hl">water</span><br>
+      <span id="tr-weather">—</span><br>
+      <span id="tr-clock">—</span>
+    </div>
+  </div>
+  <div id="stream-wrap">
+    <canvas id="world-canvas"></canvas>
+    <div id="pulse"></div>
+    <div id="event-log"></div>
+  </div>
+  <div id="bottom">
+    <div id="agents-strip"></div>
+    <div id="right-controls">
+      <div class="knob-wrap">
+        <span class="knob-label">density</span>
+        <input type="range" id="density-slider" class="knob-slider" min="0.25" max="3" step="0.05" value="1">
+      </div>
+      <div class="knob-wrap">
+        <span class="knob-label">amb</span>
+        <input type="range" id="vol-slider" class="knob-slider" min="0" max="1" step="0.01" value="0.5">
+      </div>
+      <div class="knob-wrap">
+        <span class="knob-label">echo</span>
+        <input type="range" id="ghost-slider" class="knob-slider" min="0" max="1" step="0.01" value="0.35">
+      </div>
+      <div class="knob-wrap">
+        <span class="knob-label">bpm</span>
+        <input type="range" id="bpm-slider" class="knob-slider" min="20" max="180" step="1" value="80">
+        <span id="bpm-val" style="font-size:9px;color:var(--muted);min-width:24px">80</span>
+      </div>
+      <span id="countdown"></span>
+      <span id="api-stat">—</span>
+      <button id="start-btn">begin</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// WORLDS
+// ═══════════════════════════════════════════════════════════
+const WORLDS = {
+
+  water: {
+    label: 'water',
+    weathers: ['glassy still','light swell','choppy','incoming storm','steady rain'],
+    times:    ['pre-dawn','early morning','midday','late afternoon','dusk','night'],
+    ambient: { noiseColor:'brown', rumble:{freq:60,gain:0.08}, shimmer:{freq:900,q:0.4,gain:0.012}, lfo:{rate:0.08,depth:0.18} },
+    agents: [
+      { id:'heron',        label:'heron',         desc:'solitary, hunts from stillness, strikes fast, territorial of its bank',                         state:'motionless at water edge' },
+      { id:'otter',        label:'otter',          desc:'splashing, chewing audibly, high whistle, moves unpredictably along the bank',                  state:'somewhere on the near bank' },
+      { id:'swan',         label:'swan',           desc:'mostly silent but takeoff wingbeat is enormous, displaces every other sound',                   state:'resting on far water' },
+      { id:'coot',         label:'coot',           desc:'aggressive, repetitive single-note call, skirmishes with other coots over territory',           state:'patrolling mid-water' },
+      { id:'water_rail',   label:'water rail',     desc:'hidden deep in reeds — bizarre pig-like squeal, rarely but memorably',                         state:'concealed in reeds' },
+      { id:'moorhen',      label:'moorhen',        desc:'nervous, constant soft clucking, panics easily and runs across the surface',                   state:'close to reed edge' },
+      { id:'kingfisher',   label:'kingfisher',     desc:'piercing call then a dive, surgical and fast, gone before you registered it',                  state:'perched unseen upstream' },
+      { id:'frogs',        label:'frogs',          desc:'colony in reeds, chorus rises and falls, instantly silenced by disturbance',                    state:'calling softly' },
+      { id:'fish',         label:'fish',           desc:'shoal moving beneath surface, occasional feeding frenzies, surface breaks',                     state:'drifting midwater' },
+      { id:'reed_warblers',label:'reed warblers',  desc:'dense chattering chorus from inside the reeds, rises and falls with wind and disturbance',     state:'singing low' },
+      { id:'midges',       label:'midges',         desc:'thin high collective hum over the surface, thickens in warm still air, disappears in wind',    state:'faint in the air' },
+      { id:'wind',         label:'wind',           desc:'moves through reeds and across the surface, shifts direction, stirs everything',                state:'barely present' },
+      { id:'ducks',        label:'ducks',          desc:'small group, social, dabbling, squabbling, landing noisily, suddenly taking flight',            state:'resting on far bank' },
+      { id:'rain',         label:'rain',           desc:'arrives gradually or suddenly, drums on every surface, changes everything else',                state:'absent' },
+      { id:'fisherman',    label:'fisherman',      desc:'distant, mostly silent — occasional tackle sound, a cough, a low radio, a slow movement',      state:'settled on far bank, quiet' },
+      { id:'drain',        label:'drain / sluice', desc:'man-made control — a trickle normally, becomes a rush after rain, gurgles and echoes',         state:'slow trickle' },
+      { id:'bat',          label:'bat',            desc:'nocturnal, echolocation clicks over the surface, erratic darting flight, hunting midges',       state:'inactive — daytime' },
+      { id:'willows',      label:'willows',        desc:'weeping willows at the bank — trail in water, wind moves them differently from reeds, creaking', state:'still' },
+      { id:'woodpigeon',   label:'woodpigeon',     desc:'distant cooing from treeline beyond the far bank, drowsy and repetitive, occasionally takes flight', state:'cooing in far treeline' },
+    ],
+    systemPrompt: `You are a world engine for a living pond and its banks, edged by trees and marsh. Agents have territories, behaviors, and relationships.
+
+Agents interact: heron strike silences frogs and coots. Swan takeoff displaces everything. Kingfisher dart scatters surface fish. Wind stirs willows and reeds together — they sound different. Rain activates drain. Otter surprises moorhen. Coot skirmishes when territory is crossed. Water rail never leaves reeds — heard but never seen. Midges thicken in warm still air, gone in wind. Bat only at dusk or night, hunting midges. Woodpigeon startles when something large moves. Willows creak in sudden wind gusts.
+
+When two agents with conflicting territory are close, generate "conflict" type: coot vs moorhen, coot vs coot, otter chasing fish to surface.
+
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain absent unless weather says rain. Bat absent unless dusk or night. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  },
+
+  city: {
+    label: 'city',
+    weathers: ['clear','overcast','light rain','heavy rain','windy','fog'],
+    times:    ['early morning','rush hour','midday','afternoon','evening rush','night'],
+    ambient: { noiseColor:'pink', rumble:{freq:75,gain:0.09}, shimmer:{freq:280,q:1.2,gain:0.012}, lfo:{rate:0.022,depth:0.04} },
+    agents: [
+      { id:'pedestrian',   label:'pedestrian stream', desc:'continuous foot traffic on pavement — heels, soles, shuffling, conversations in passing, shopping bags', state:'moderate flow both directions' },
+      { id:'cyclist',      label:'cyclist',           desc:'wheels on tarmac, bell when weaving through pedestrians, chain, gear shift, acceleration burst', state:'approaching from distance' },
+      { id:'car',          label:'car',               desc:'engine idle at lights, acceleration, door slam, horn — character changes with weather and time of day', state:'passing' },
+      { id:'tram',         label:'tram',              desc:'iron wheels on rail, electric overhead hum, bell at stop, doors opening and closing, brief crowd movement', state:'between stops' },
+      { id:'pigeons',      label:'pigeons',           desc:'collective wing burst from ledge, cooing, settling, scattering when alarmed by pedestrian or vehicle', state:'settled on ledge above' },
+      { id:'busker',       label:'busker',            desc:'music bleeding from an underpass or arcade — instrument changes by day. Coins in case. Echo from the arcade roof', state:'playing, few listeners' },
+      { id:'cafe',         label:'café',              desc:'espresso machine burst, cups clinking, outdoor chairs scraping, brief laughter, coffee order at window', state:'steady trade' },
+      { id:'vendor',       label:'vendor',            desc:'newspaper shout, market stall call, pricing exchange, cart wheels on stone, till receipt', state:'calling intermittently' },
+      { id:'construction', label:'construction',      desc:'pneumatic drill, scaffold clanging, cement mixer, shouted instruction, reversing beep, abrupt silence', state:'active nearby' },
+      { id:'shopkeeper',   label:'shopkeeper',        desc:'door buzzer as customer enters, shutter rolling, stock movement, brief exchange, bag rustle', state:'quiet' },
+      { id:'argument',     label:'argument',          desc:'sudden raised voices, footsteps retreating fast, then silence — nearby pedestrians slow', state:'absent' },
+      { id:'phone_call',   label:'phone call',        desc:'one-sided loud conversation while walking — pacing footsteps, pause, laugh, hang up, then quiet', state:'absent' },
+      { id:'delivery',     label:'delivery',          desc:'trolley wheels on kerb edge, hand truck banging, van engine idling, package dropped on step, buzzer press', state:'elsewhere' },
+      { id:'rain_city',    label:'rain',              desc:'rain on shop awnings, drain gurgle, umbrellas snapping open, running footsteps for cover, puddle splash', state:'absent' },
+      { id:'wind_city',    label:'wind',              desc:'gust channelled between buildings — loose shop sign rattling, newspaper lifted, awning flap, brief chill silence', state:'still' },
+    ],
+    systemPrompt: `You are a world engine for a living city street. Sound events emerge from what agents are DOING and how they affect each other.
+
+Agents interact: construction noise drowns out busker — busker moves when drill starts. Tram arrival scatters pigeons and pauses pedestrian flow. Argument draws nearby phone_call to silence. Delivery blocks cyclist, causing bell and sharp exchange. Rain triggers umbrella cascade through pedestrian stream. Café becomes audible when construction pauses. Vendor calls louder when tram passes. Shopkeeper reacts to nearby argument.
+
+Time of day matters: early morning — cyclist and vendor dominate, footsteps echo. Rush hour — tram, pedestrian, car all layered dense. Night — busker echoes further, single footsteps, argument carries.
+
+When two agents directly interact, generate "conflict" type: cyclist vs pedestrian near-miss, vendor vs shopkeeper territory dispute, construction vs café complaint.
+
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind only in matching weather. Tram more frequent at rush hour. Night makes single sounds more prominent. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  },
+
+  space: {
+    label: 'space',
+    weathers: ['solar minimum','solar flare','geomagnetic storm','deep silence','ion storm','coronal mass ejection'],
+    times:    ['orbital night','transit','aphelion','perihelion','eclipse','deep field'],
+    ambient: { noiseColor:'pink', rumble:{freq:28,gain:0.05}, shimmer:{freq:3400,q:0.15,gain:0.016}, lfo:{rate:0.018,depth:0.28} },
+    agents: [
+      { id:'cosmic_bg',   label:'cosmic background', desc:'the 2.7K hum of the universe — omnidirectional, unchanging, barely audible but always present', state:'constant, isotropic' },
+      { id:'solar_wind',  label:'solar wind',         desc:'a sibilant rush of charged particles from the star — varies with solar activity, surges or thins', state:'steady flux' },
+      { id:'pulsar',      label:'pulsar',             desc:'a neutron star rotating — precise electromagnetic pulse on a fixed interval, slightly phase-drifting over epochs', state:'pulsing, 1.34s period' },
+      { id:'satellite',   label:'satellite',          desc:'a faint telemetry tone sweeping past in low orbit — Doppler shift as it approaches and recedes, then silence', state:'below horizon' },
+      { id:'meteorite',   label:'meteorite',          desc:'entry flash — a high-pitched streak through the upper atmosphere becoming low-frequency entry rumble, brief', state:'absent' },
+      { id:'probe',       label:'deep probe',         desc:'ancient transmission from a probe beyond the heliosphere — data burst, then vast static, then silence across light-years', state:'no signal received' },
+      { id:'asteroid',    label:'asteroid belt',      desc:'distant grinding and slow displacement — rock on rock, collision resonance, the weight of accumulated time', state:'distant resonance' },
+      { id:'ion_cloud',   label:'ion cloud',          desc:'electromagnetic interference — radio signals fragment and crackle, then clear. Thickens as cloud drifts through', state:'dispersed, distant' },
+      { id:'planet',      label:'planet',             desc:'magnetosphere of a gas giant — a massive slow oscillation, 40-second cycle, sub-bass resonance felt more than heard', state:'inhaling' },
+      { id:'ring_system', label:'ring system',        desc:'ice particles and rock in orbit — a continuous crystalline high hiss, very fine, structure audible within it', state:'steady circulation' },
+      { id:'black_hole',  label:'black hole',         desc:'gravitational bass at the edge of detection — everything slightly bends toward it, distorts nearby signal frequency', state:'distant, felt not heard' },
+      { id:'quasar',      label:'quasar',             desc:'a periodic jet of energy from a distant galactic core — a burst of high-frequency signal repeating over vast intervals', state:'between bursts' },
+      { id:'nebula',      label:'nebula',             desc:'electromagnetic drift through an ionised dust cloud — a low staticky rustle, gradual and vast, signals scatter through it', state:'drifting through edge' },
+      { id:'comet',       label:'comet tail',         desc:'sublimating ice vapor streaming behind — a faint high-frequency hiss that sweeps in the direction of travel, very fine', state:'approaching perihelion' },
+    ],
+    systemPrompt: `You are a world engine translating electromagnetic and gravitational events of deep space into sound. Nothing here is natural sound — everything is translated: electromagnetic waves as tone, gravity as bass, particle streams as noise, distance as silence. The listener is a sensor array, not a human ear.
+
+Agents affect each other: Solar flare amplifies ion cloud interference, which fragments satellite telemetry. Pulsar rhythm becomes confused near black hole gravity well. Meteorite entry disrupts ring system resonance. Ion storm overwhelms cosmic background. Probe signal passes through nebula dust and arrives fragmented and phase-shifted. Planet breath cycle creates tidal pull on nearby signal paths. Comet tail hiss intensifies as it approaches perihelion. Quasar jet briefly illuminates ion cloud edges.
+
+The environment is vast, cold, mostly silent. Events are rare and significant. When multiple signals interact, the interference pattern itself is the event.
+
+When two agents interact or collide electromagnetically, generate "conflict" type: pulsar phase-locked to planet resonance, ion cloud absorbing satellite signal, meteorite fragmenting ring system structure.
+
+RULES: 1 sentence — describe only what is electromagnetically perceived / felt. Use language of signal, frequency, resonance, interference, pressure wave, drift, phase. Avoid terrestrial metaphors — no birds, no rain, no human sound. Let agent states evolve. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  }
+
+};
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  world:'water', running:false,
+  bpm:80,
+  weather:'', timeOfDay:'',
+  agentStates:{}, recentEvents:[],
+  eventCount:0, startTime:null,
+  nextAt:null, nextTimeout:null, cdInterval:null,
+  density: 1,
+};
+
+// ═══════════════════════════════════════════════════════════
+// WEB AUDIO
+// ═══════════════════════════════════════════════════════════
+let ctx, masterGain, ambGain;
+let noiseSource, noiseFilter, lfoNode, lfoGain;
+let noiseSource2, lfoNode2;
+
+function buildNoise(type) {
+  const bufLen = ctx.sampleRate * 4;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  if (type === 'brown') {
+    let last = 0;
+    for (let i = 0; i < bufLen; i++) {
+      const w = Math.random() * 2 - 1;
+      data[i] = (last + 0.02 * w) / 1.02; last = data[i]; data[i] *= 3.5;
+    }
+  } else {
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for (let i = 0; i < bufLen; i++) {
+      const w = Math.random() * 2 - 1;
+      b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+      b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+      b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+      data[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+    }
+  }
+  const src = ctx.createBufferSource(); src.buffer=buf; src.loop=true; return src;
+}
+
+function startAmbient(world) {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state==='suspended') ctx.resume();
+  stopAmbient();
+  const p = WORLDS[world].ambient;
+
+  masterGain = ctx.createGain();
+  masterGain.gain.value = parseFloat(document.getElementById('vol-slider').value);
+  masterGain.connect(ctx.destination);
+
+  ambGain = ctx.createGain(); ambGain.gain.value=0; ambGain.connect(masterGain);
+
+  noiseSource = buildNoise(p.noiseColor);
+  const ls = ctx.createBiquadFilter(); ls.type='lowshelf'; ls.frequency.value=p.rumble.freq; ls.gain.value=14;
+  noiseFilter = ctx.createBiquadFilter(); noiseFilter.type='bandpass'; noiseFilter.frequency.value=p.shimmer.freq; noiseFilter.Q.value=p.shimmer.q;
+  noiseSource.connect(ls); ls.connect(noiseFilter); noiseFilter.connect(ambGain);
+
+  lfoNode = ctx.createOscillator(); lfoNode.type='sine'; lfoNode.frequency.value=p.lfo.rate;
+  lfoGain = ctx.createGain(); lfoGain.gain.value=p.lfo.depth;
+  lfoNode.connect(lfoGain); lfoGain.connect(ambGain.gain);
+
+  noiseSource2 = buildNoise(p.noiseColor);
+  const ls2 = ctx.createBiquadFilter(); ls2.type='lowshelf'; ls2.frequency.value=p.rumble.freq*0.7; ls2.gain.value=10;
+  const nf2  = ctx.createBiquadFilter(); nf2.type='bandpass'; nf2.frequency.value=p.shimmer.freq*1.85; nf2.Q.value=p.shimmer.q*1.6;
+  const lg2  = ctx.createGain(); lg2.gain.value=0;
+  noiseSource2.connect(ls2); ls2.connect(nf2); nf2.connect(lg2); lg2.connect(ambGain);
+
+  lfoNode2 = ctx.createOscillator(); lfoNode2.type='sine'; lfoNode2.frequency.value=p.lfo.rate*1.618;
+  const lf2 = ctx.createGain(); lf2.gain.value=p.lfo.depth*0.65;
+  lfoNode2.connect(lf2); lf2.connect(lg2.gain);
+
+  noiseSource.start(); noiseSource2.start(); lfoNode.start(); lfoNode2.start();
+  ambGain.gain.setTargetAtTime(0.55, ctx.currentTime, 2.5);
+  lg2.gain.setTargetAtTime(0.32, ctx.currentTime, 3.5);
+
+  let fw = setInterval(() => {
+    if (!noiseFilter) { clearInterval(fw); return; }
+    noiseFilter.frequency.setTargetAtTime(p.shimmer.freq*(0.75+Math.random()*0.5), ctx.currentTime, 6);
+  }, 8000);
+}
+
+function stopAmbient() {
+  try { noiseSource  && noiseSource.stop();  } catch(e){}
+  try { noiseSource2 && noiseSource2.stop(); } catch(e){}
+  try { lfoNode      && lfoNode.stop();      } catch(e){}
+  try { lfoNode2     && lfoNode2.stop();     } catch(e){}
+  noiseSource=noiseSource2=lfoNode=lfoNode2=null;
+  if (ambGain) { ambGain.disconnect(); ambGain=null; }
+}
+
+document.getElementById('vol-slider').addEventListener('input', e => {
+  if (masterGain) masterGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
+});
+
+// ═══════════════════════════════════════════════════════════
+// ELEVENLABS SFX
+// ═══════════════════════════════════════════════════════════
+async function playSFX(soundPrompt, direction, vol=1.0) {
+  debugLine('sfx', soundPrompt.slice(0,38));
+  try {
+    const res = await fetch('/sfx', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text:soundPrompt, duration_seconds:4, prompt_influence:0.4, world:S.world })
+    });
+    if (!res.ok) return;
+    const ab  = await res.arrayBuffer();
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state==='suspended') ctx.resume();
+    const buf = await ctx.decodeAudioData(ab);
+    const src = ctx.createBufferSource(); src.buffer=buf;
+    const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2600; lp.Q.value=0.5;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction]??0;
+    const sg  = ctx.createGain(); sg.gain.value = 0.60 * vol;
+    src.connect(lp); lp.connect(pan); pan.connect(sg); sg.connect(masterGain||ctx.destination); src.start();
+  } catch(e) { console.warn('SFX fail:',e); }
+}
+
+function playSounds(sounds, direction) {
+  if (!sounds || !sounds.length) return;
+  sounds.forEach(s => {
+    setTimeout(() => playSFX(s.prompt, direction, s.vol ?? 1.0).catch(()=>{}), s.delay ?? 0);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// GHOST LAYER — cached SFX played back muffled as texture
+// ═══════════════════════════════════════════════════════════
+let ghostMasterGain = null;
+const GHOST = { active:false, files:[], loopTimer:null, refreshTimer:null };
+
+async function ghostFetch() {
+  try {
+    const res = await fetch('http://localhost:3001/sfx-cache');
+    if (res.ok) {
+      const all = await res.json();
+      const worldFiles = all.filter(f => f.startsWith(S.world));
+      GHOST.files = worldFiles.length > 0 ? worldFiles : all;
+    }
+  } catch(e) {}
+}
+
+async function ghostPlay() {
+  if (!GHOST.active || GHOST.files.length===0 || !ctx) return;
+  const file = GHOST.files[Math.floor(Math.random()*GHOST.files.length)];
+  try {
+    const res = await fetch(`http://localhost:3001/sfx-cache/${encodeURIComponent(file)}`);
+    if (!res.ok) return;
+    const ab  = await res.arrayBuffer();
+    const buf = await ctx.decodeAudioData(ab);
+    const src = ctx.createBufferSource(); src.buffer=buf;
+    const lpf = ctx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=380+Math.random()*220; lpf.Q.value=0.4;
+    const pan = ctx.createStereoPanner(); pan.pan.value=(Math.random()-0.5)*0.6;
+    const gain = ctx.createGain(); gain.gain.value=0;
+    src.connect(lpf); lpf.connect(pan); pan.connect(gain); gain.connect(ghostMasterGain||masterGain||ctx.destination);
+    const vol = parseFloat(document.getElementById('ghost-slider').value);
+    const now = ctx.currentTime, dur = buf.duration;
+    gain.gain.setTargetAtTime(vol*0.36, now, 1.2);
+    gain.gain.setTargetAtTime(0, now+dur-1.5, 1.0);
+    src.start(); src.stop(now+dur+0.5);
+    debugLine('ghost', file);
+  } catch(e) {}
+}
+
+function scheduleGhost() {
+  if (!GHOST.active) return;
+  const delay = 18000+Math.random()*45000;
+  GHOST.loopTimer = setTimeout(async () => {
+    await ghostPlay();
+    if (Math.random()<0.3) setTimeout(ghostPlay, rnd(3000,9000));
+    scheduleGhost();
+  }, delay);
+}
+
+function startGhostLayer() {
+  if (!ctx) return;
+  GHOST.active=true;
+  ghostMasterGain = ctx.createGain();
+  ghostMasterGain.gain.value = parseFloat(document.getElementById('ghost-slider').value);
+  ghostMasterGain.connect(masterGain);
+  ghostFetch();
+  GHOST.refreshTimer = setInterval(ghostFetch, 30000);
+  GHOST.loopTimer = setTimeout(() => { ghostPlay(); scheduleGhost(); }, 12000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// DEBUG
+// ═══════════════════════════════════════════════════════════
+const DBG = { timers:{} };
+function debugLine(key, val) {
+  const el = document.getElementById('dbg-'+key); if (!el) return;
+  el.textContent = val; el.style.opacity = '1';
+  clearTimeout(DBG.timers[key]);
+  DBG.timers[key] = setTimeout(() => { el.style.opacity = '0.25'; }, 7000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// MELODIC TONE LAYER
+// ═══════════════════════════════════════════════════════════
+const MELODY_CFG = {
+  // C pentatonic across 3 octaves — bright, water-like
+  water: { freqs:[261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.26,783.99,880.00],
+           wave:'sine',    vol:0.075, atk:0.6, hold:0.25, rel:2.8, beatMult:0.5 },
+  // A minor, lower register — urban metallic
+  city:  { freqs:[110.00,123.47,130.81,146.83,164.81,174.61,196.00,220.00,246.94,261.63],
+           wave:'triangle',vol:0.060, atk:0.3, hold:0.20, rel:1.8, beatMult:0.25 },
+  // Deep drone scale — sparse, vast
+  space: { freqs:[32.70,36.71,41.20,48.99,55.00,65.41,82.41,110.00],
+           wave:'sine',    vol:0.085, atk:2.5, hold:1.20, rel:5.5, beatMult:2.0 },
+};
+let melodyTimer = null;
+const beatMs = () => 60000 / S.bpm;
+
+// VIBE — continuous world-mood state, drives melody character
+const VIBE = { activity: 0.3, tension: 0.2, register: 0.5 };
+const VIBE_TYPE = {
+  moment:      { activity: 0.65, tension: 0.35 },
+  interaction: { activity: 0.88, tension: 0.70 },
+  shift:       { activity: 0.60, tension: 0.50 },
+  passing:     { activity: 0.48, tension: 0.25 },
+  distant:     { activity: 0.28, tension: 0.15 },
+  residue:     { activity: 0.18, tension: 0.10 },
+  conflict:    { activity: 0.80, tension: 0.90 },
+};
+const VIBE_TIME = {
+  'late night':0.15,'night':0.20,'early morning':0.30,'dawn':0.40,
+  'morning':0.65,'midday':0.82,'afternoon':0.70,'dusk':0.45,'evening':0.35,
+};
+function updateVibe(ev) {
+  const tgt = VIBE_TYPE[ev?.type] || { activity:0.4, tension:0.3 };
+  VIBE.activity += (tgt.activity - VIBE.activity) * 0.35;
+  VIBE.tension  += (tgt.tension  - VIBE.tension)  * 0.30;
+  const tod = (S.timeOfDay||'').toLowerCase();
+  for (const [k,v] of Object.entries(VIBE_TIME)) {
+    if (tod.includes(k)) { VIBE.register += (v - VIBE.register) * 0.15; break; }
+  }
+}
+
+function playNote(world, freq) {
+  if (!ctx || !masterGain) return;
+  const m = MELODY_CFG[world];
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=freq*5;
+  osc.type=m.wave; osc.frequency.value=freq; env.gain.value=0;
+  osc.connect(lp); lp.connect(env); env.connect(masterGain);
+  const t=ctx.currentTime, dur=m.atk+m.hold+m.rel;
+  env.gain.linearRampToValueAtTime(0,t);
+  env.gain.linearRampToValueAtTime(m.vol,t+m.atk);
+  env.gain.setValueAtTime(m.vol,t+m.atk+m.hold);
+  env.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  osc.start(t); osc.stop(t+dur+0.1);
+}
+
+function playPhrase(world) {
+  const m = MELODY_CFG[world]; if (!m||!ctx||!masterGain||!S.running) return;
+  // phrase length from activity (2–5 notes)
+  const len = 2 + Math.round(VIBE.activity * 3);
+  // starting pitch: register maps into freq array
+  const fl = m.freqs.length;
+  const center = Math.round(VIBE.register * (fl-1));
+  let idx = Math.max(0, Math.min(fl-1, center + Math.floor((Math.random()-0.5)*4)));
+  // step size: high tension = half-steps (1), low tension = wider leaps (3)
+  const notes = [];
+  for (let i=0; i<len; i++) {
+    notes.push(m.freqs[Math.max(0,Math.min(fl-1,idx))]);
+    const maxStep = VIBE.tension>0.6 ? 1 : VIBE.tension>0.3 ? 2 : 3;
+    const dir = Math.random()<0.5?1:-1;
+    idx = Math.max(0,Math.min(fl-1, idx + dir*(1+Math.floor(Math.random()*maxStep))));
+  }
+  // spacing: high activity = tighter, low activity = more breath
+  const spacing = beatMs() * m.beatMult * (1.2 - VIBE.activity*0.8);
+  notes.forEach((freq,i) => {
+    setTimeout(()=>{ if(!S.running)return; playNote(world,freq); }, i*spacing);
+  });
+  debugLine('tone', notes.map(f=>Math.round(f)+'Hz').join(' → '));
+  // self-schedule next phrase: phrase duration + 1-beat breath
+  const phraseDur = (len-1)*spacing + (m.atk+m.hold+m.rel)*1000;
+  melodyTimer = setTimeout(()=>{ if(S.running) playPhrase(S.world); }, phraseDur + beatMs());
+}
+
+function startMelody(world) {
+  stopMelody();
+  const m = MELODY_CFG[world]; if (!m) return;
+  melodyTimer = setTimeout(()=>{ if(S.running) playPhrase(world); }, beatMs()*2);
+}
+
+function stopMelody() { clearTimeout(melodyTimer); melodyTimer = null; }
+
+function stopGhostLayer() {
+  GHOST.active=false;
+  clearTimeout(GHOST.loopTimer); clearInterval(GHOST.refreshTimer);
+  if (ghostMasterGain) { ghostMasterGain.disconnect(); ghostMasterGain=null; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RHYTHM
+// ═══════════════════════════════════════════════════════════
+const PHASES = [
+  { minW:10, maxW:28, clusterP:0.06, clusterN:1 },
+  { minW: 6, maxW:15, clusterP:0.14, clusterN:1 },
+  { minW: 3, maxW: 9, clusterP:0.30, clusterN:2 },
+  { minW: 2, maxW: 5, clusterP:0.58, clusterN:3 },
+  { minW: 5, maxW:14, clusterP:0.16, clusterN:1 },
+  { minW: 8, maxW:22, clusterP:0.08, clusterN:1 },
+];
+const PHASE_LEN = [4,3,4,5,3,4];
+let phaseIdx=0, phaseEvts=0;
+function phase(){ return PHASES[phaseIdx%PHASES.length]; }
+function tickPhase(){ if(++phaseEvts>=PHASE_LEN[phaseIdx%PHASE_LEN.length]){phaseEvts=0;phaseIdx++;} }
+function nextDelay(){ const p=phase(); const raw=rnd(p.minW,p.maxW)*(Math.random()<0.07?rnd(1.5,2.8):1)*1000/S.density; const beat=beatMs(); return Math.max(beat,Math.round(raw/beat)*beat); }
+function rnd(a,b){ return a+Math.random()*(b-a); }
+
+// ═══════════════════════════════════════════════════════════
+// CLAUDE
+// ═══════════════════════════════════════════════════════════
+function buildProximityNote() {
+  const agents = WORLDS[S.world].agents;
+  const pairs  = [];
+  for (let i = 0; i < agents.length; i++) {
+    for (let j = i+1; j < agents.length; j++) {
+      const pi = VIEW.pos[agents[i].id] || AGENT_POS[S.world][agents[i].id];
+      const pj = VIEW.pos[agents[j].id] || AGENT_POS[S.world][agents[j].id];
+      if (!pi||!pj) continue;
+      const dx=pi.gx-pj.gx, dz=pi.gz-pj.gz;
+      if (Math.sqrt(dx*dx+dz*dz)<1.4) pairs.push(`${agents[i].label} & ${agents[j].label}`);
+    }
+  }
+  return pairs.length ? pairs.join(', ') : 'none';
+}
+
+async function callClaude() {
+  const world = WORLDS[S.world];
+  const agentBlock = world.agents.map(a =>
+    `- ${a.label} [${a.id}]: ${a.desc}\n  state: ${S.agentStates[a.id]||a.state}`
+  ).join('\n');
+  const recentBlock = S.recentEvents.slice(-5).map(e=>`[${e.agent}] ${e.description}`).join('\n')||'none yet';
+
+  const prompt =
+`ENVIRONMENT: ${world.label}
+WEATHER / CONDITIONS: ${S.weather}
+TIME / PHASE: ${S.timeOfDay}
+EVENTS SO FAR: ${S.eventCount}
+
+AGENTS:
+${agentBlock}
+
+RECENT (evolve from, don't repeat):
+${recentBlock}
+
+CLOSE PAIRS right now (consider interaction or conflict):
+${buildProximityNote()}
+
+Respond ONLY with valid JSON, no markdown:
+{
+  "description": "one sentence — only what is heard / sensed",
+  "agent": "agent label",
+  "type": "distant|passing|moment|shift|interaction|residue|conflict",
+  "direction": "ahead|behind|left|right|above|all around",
+  "sounds": [
+    { "prompt": "first sound, max 10 words", "delay": 0,    "vol": 0.70 },
+    { "prompt": "second sound, max 10 words", "delay": 1200, "vol": 0.42 },
+    { "prompt": "third sound, max 10 words",  "delay": 2800, "vol": 0.28 }
+  ],
+  "agent_updates": { "agent_id": "new state" }
+}
+
+sounds: 1 required, 2 and 3 optional. Spread sounds across 0–4 seconds. No sound should be loud or sharp — think layers heard through space. First is the main event (vol ~0.70), second arrives later as context or echo (vol ~0.40), third is a distant residue or environmental bleed (vol ~0.25). Together they fill the gap between events.`;
+
+  const res = await fetch('/claude', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:500, system:world.systemPrompt, messages:[{role:'user',content:prompt}] })
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = await res.json();
+  return JSON.parse(data.content[0].text.trim().replace(/```json|```/g,'').trim());
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENGINE
+// ═══════════════════════════════════════════════════════════
+function scheduleNext(){
+  if(!S.running) return;
+  const delay=nextDelay(); S.nextAt=Date.now()+delay;
+  if(delay>14000) setTimeout(()=>{ if(S.running) addSilence(); },1800);
+  S.nextTimeout=setTimeout(async()=>{
+    if(!S.running) return;
+    const p=phase(); const n=Math.random()<p.clusterP?p.clusterN:1;
+    for(let i=0;i<n;i++){
+      if(!S.running) break;
+      if(i>0) await sleep(rnd(1200,3500));
+      await fireEvent();
+    }
+    scheduleNext();
+  },delay);
+}
+
+async function fireEvent(){
+  ripple(); setStatus('—');
+  try {
+    const ev=await callClaude();
+    if(ev.agent_updates){ for(const [id,st] of Object.entries(ev.agent_updates)) S.agentStates[id]=st; }
+    addEventRow(ev);
+    S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
+    S.eventCount++; tickPhase();
+    updateVibe(ev);
+    flashAgent(ev.agent, ev.agent_updates);
+    updateClock();
+    if(ev.sounds) playSounds(ev.sounds, ev.direction);
+    else if(ev.sound_prompt) playSFX(ev.sound_prompt, ev.direction).catch(()=>{});
+  } catch(e){ console.warn('event failed:',e); setStatus('retry…'); }
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ═══════════════════════════════════════════════════════════
+// DOM
+// ═══════════════════════════════════════════════════════════
+function addEventRow(ev){
+  const log=document.getElementById('event-log');
+  const time=new Date().toTimeString().slice(0,5);
+  const tag=(ev.agent||'').slice(0,5).toLowerCase();
+  const el=document.createElement('div');
+  el.className=`ev ${ev.type||'moment'}`;
+  el.innerHTML=`<span class="ev-time">${time}</span><span class="ev-agent">${tag}</span><span class="ev-desc">${ev.description}</span><span class="ev-type">${ev.type||''}</span>`;
+  log.appendChild(el); pruneLog(log);
+}
+
+function addSilence(){
+  const log=document.getElementById('event-log');
+  const el=document.createElement('div'); el.className='ev';
+  el.innerHTML=`<div class="ev-silence">· · ·</div>`;
+  log.appendChild(el); pruneLog(log);
+}
+
+function pruneLog(log){
+  const evs=log.querySelectorAll('.ev');
+  if(evs.length>9){ evs[0].classList.add('gone'); setTimeout(()=>evs[0].remove(),4500); }
+}
+
+function ripple(){
+  const p=document.getElementById('pulse');
+  p.classList.remove('pop'); void p.offsetWidth; p.classList.add('pop');
+}
+
+function setStatus(msg){ document.getElementById('api-stat').textContent=msg; }
+
+function updateClock(){
+  const el=Math.floor((Date.now()-S.startTime)/1000);
+  const m=String(Math.floor(el/60)).padStart(2,'0');
+  const s=String(el%60).padStart(2,'0');
+  document.getElementById('tr-clock').textContent=`${m}:${s} · ${S.eventCount} events`;
+}
+
+function flashAgent(label, agentUpdates){
+  const primary=WORLDS[S.world].agents.find(a=>a.label===label);
+  if (primary) VIEW.pulses[primary.id]=Date.now();
+  if (agentUpdates){
+    for (const id of Object.keys(agentUpdates)){
+      if (!VIEW.pulses[id]||Date.now()-VIEW.pulses[id]>300) VIEW.secondary[id]=Date.now();
+    }
+  }
+  document.querySelectorAll('.agent-pill').forEach(pill=>{
+    const isThis=pill.dataset.label===label;
+    pill.classList.toggle('lit',isThis);
+    if(isThis){ setTimeout(()=>{ pill.classList.remove('lit'); pill.classList.add('warm'); setTimeout(()=>pill.classList.remove('warm'),6000); },2500); }
+  });
+}
+
+function buildAgentStrip(){
+  const strip=document.getElementById('agents-strip'); strip.innerHTML='';
+  WORLDS[S.world].agents.forEach(a=>{
+    const pill=document.createElement('span');
+    pill.className='agent-pill'; pill.dataset.label=a.label;
+    pill.textContent=a.label; pill.title=S.agentStates[a.id]||a.state;
+    strip.appendChild(pill);
+  });
+}
+
+function initWorld(w){
+  S.world=w; S.recentEvents=[]; S.eventCount=0; phaseIdx=0; phaseEvts=0;
+  const world=WORLDS[w];
+  S.weather  =world.weathers[Math.floor(Math.random()*world.weathers.length)];
+  S.timeOfDay=world.times[Math.floor(Math.random()*world.times.length)];
+  S.agentStates={};
+  world.agents.forEach(a=>{ S.agentStates[a.id]=a.state; });
+  document.getElementById('tr-world').textContent=w;
+  document.getElementById('tr-weather').textContent=`${S.weather} · ${S.timeOfDay}`;
+  document.getElementById('tr-clock').textContent='—';
+  document.querySelectorAll('.world-btn').forEach(b=>b.classList.toggle('active',b.dataset.world===w));
+  document.getElementById('event-log').innerHTML='';
+  buildAgentStrip();
+  VIEW.pulses={}; VIEW.secondary={}; VIEW.pos={}; VIEW.tgt={};
+  if(S.running){ startAmbient(w); startMelody(w); }
+}
+
+function startEngine(){
+  S.running=true; S.startTime=Date.now();
+  document.getElementById('start-btn').textContent='stop';
+  document.getElementById('start-btn').classList.add('on');
+  startAmbient(S.world); startViz(); startGhostLayer(); startMelody(S.world);
+  S.cdInterval=setInterval(()=>{
+    if(!S.running||!S.nextAt) return;
+    const rem=Math.max(0,S.nextAt-Date.now());
+    document.getElementById('countdown').textContent=rem>800?`${Math.round(rem/1000)}s`:'';
+  },500);
+  setTimeout(()=>fireEvent().then(()=>scheduleNext()),600);
+}
+
+function stopEngine(){
+  S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval);
+  stopAmbient(); stopViz(); stopGhostLayer(); stopMelody();
+  document.getElementById('countdown').textContent='';
+  document.getElementById('start-btn').textContent='begin';
+  document.getElementById('start-btn').classList.remove('on');
+  setStatus('—');
+}
+
+// ═══════════════════════════════════════════════════════════
+// ISOMETRIC VISUALIZATION
+// ═══════════════════════════════════════════════════════════
+const GRID_N = 8;
+
+const AGENT_POS = {
+  water: {
+    heron:        {gx:1.2, gz:3.8}, otter:        {gx:2.5, gz:1.5},
+    swan:         {gx:5.8, gz:2.2}, coot:         {gx:1.8, gz:5.8},
+    water_rail:   {gx:0.6, gz:2.8}, moorhen:      {gx:3.2, gz:1.2},
+    kingfisher:   {gx:2.0, gz:0.7}, frogs:        {gx:0.7, gz:4.8},
+    fish:         {gx:4.2, gz:4.8}, reed_warblers:{gx:0.5, gz:3.8},
+    midges:       {gx:3.8, gz:2.8}, wind:         {gx:6.0, gz:5.5},
+    ducks:        {gx:6.8, gz:5.8}, rain:         {gx:4.0, gz:7.0},
+    fisherman:    {gx:7.2, gz:3.2}, drain:        {gx:7.5, gz:1.2},
+    bat:          {gx:3.5, gz:0.8}, willows:      {gx:0.4, gz:6.5},
+    woodpigeon:   {gx:7.0, gz:7.0},
+  },
+  city: {
+    pedestrian:  {gx:4.0, gz:4.0}, cyclist:     {gx:3.5, gz:1.0},
+    car:         {gx:6.0, gz:3.0}, tram:        {gx:4.0, gz:6.5},
+    pigeons:     {gx:2.0, gz:2.5}, busker:      {gx:1.0, gz:5.0},
+    cafe:        {gx:6.5, gz:6.0}, vendor:      {gx:2.5, gz:5.5},
+    construction:{gx:7.0, gz:2.0}, shopkeeper:  {gx:5.5, gz:1.5},
+    argument:    {gx:3.0, gz:3.5}, phone_call:  {gx:5.0, gz:4.5},
+    delivery:    {gx:6.2, gz:4.8}, rain_city:   {gx:4.0, gz:0.5},
+    wind_city:   {gx:7.5, gz:7.5},
+  },
+  space: {
+    cosmic_bg:  {gx:4.0, gz:4.0}, solar_wind: {gx:0.5, gz:4.0},
+    pulsar:     {gx:7.2, gz:1.5}, satellite:  {gx:1.0, gz:0.8},
+    meteorite:  {gx:0.8, gz:0.8}, probe:      {gx:7.5, gz:7.5},
+    asteroid:   {gx:6.5, gz:2.5}, ion_cloud:  {gx:3.0, gz:6.5},
+    planet:     {gx:5.5, gz:5.5}, ring_system:{gx:5.5, gz:4.2},
+    black_hole: {gx:1.5, gz:6.5}, quasar:     {gx:7.0, gz:6.0},
+    nebula:     {gx:2.5, gz:3.0}, comet:      {gx:3.5, gz:1.0},
+  },
+};
+
+const MOBILE = {
+  // water
+  otter:{speed:0.007,wander:3.5}, swan:{speed:0.003,wander:4.5},
+  coot:{speed:0.004,wander:2.5},  kingfisher:{speed:0.014,wander:5.0},
+  ducks:{speed:0.004,wander:3.5}, fish:{speed:0.006,wander:4.0},
+  moorhen:{speed:0.003,wander:2.5},heron:{speed:0.0008,wander:1.5},
+  fisherman:{speed:0.0004,wander:1.2}, bat:{speed:0.010,wander:4.0},
+  // city
+  pedestrian:{speed:0.006,wander:4.0}, cyclist:{speed:0.014,wander:6.0},
+  car:{speed:0.018,wander:7.5},        tram:{speed:0.008,wander:7.0},
+  pigeons:{speed:0.009,wander:3.5},    delivery:{speed:0.007,wander:4.5},
+  phone_call:{speed:0.005,wander:3.0}, argument:{speed:0.012,wander:2.5},
+  // space
+  satellite:{speed:0.012,wander:7.0}, meteorite:{speed:0.022,wander:8.0},
+  probe:{speed:0.002,wander:5.0},     comet:{speed:0.005,wander:6.0},
+  ion_cloud:{speed:0.003,wander:4.0}, solar_wind:{speed:0.004,wander:5.0},
+  nebula:{speed:0.001,wander:3.5},    asteroid:{speed:0.002,wander:3.5},
+};
+
+// Environment decorations
+const ENV_WATER_RIPPLES = [
+  {gx:1.5,gz:2.0,phase:0.00},{gx:5.2,gz:1.5,phase:0.33},
+  {gx:2.5,gz:5.8,phase:0.66},{gx:6.2,gz:4.5,phase:0.15},
+  {gx:1.0,gz:4.2,phase:0.50},{gx:4.8,gz:6.8,phase:0.80},
+  {gx:7.2,gz:2.5,phase:0.25},{gx:3.5,gz:3.8,phase:0.45},
+];
+
+const ENV_CITY_BLOCKS = [
+  {gx:0.3, gz:0.3, w:1.4, d:1.0, h:2.4},
+  {gx:6.3, gz:0.3, w:1.4, d:1.2, h:1.8},
+  {gx:0.3, gz:5.8, w:1.2, d:1.9, h:2.8},
+  {gx:6.2, gz:5.5, w:1.5, d:2.2, h:3.2},
+  {gx:2.8, gz:0.4, w:2.0, d:1.0, h:1.4},
+  {gx:5.2, gz:2.2, w:1.0, d:1.2, h:1.6},
+  {gx:1.0, gz:3.2, w:0.8, d:2.0, h:1.3},
+  {gx:3.8, gz:5.2, w:1.2, d:1.0, h:1.1},
+];
+
+// Space: stars scattered across the grid, orbital paths, planet bodies
+const ENV_SPACE_STARS = (() => {
+  // deterministic pseudo-random star field
+  const stars = [];
+  let s = 42;
+  const rand = () => { s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
+  for (let i = 0; i < 55; i++) {
+    stars.push({ gx:rand()*8, gz:rand()*8, r:rand()<0.12?1.4:rand()<0.35?1.0:0.6, brightness:0.4+rand()*0.6, twinkle:0.4+rand()*1.2, phase:rand()*Math.PI*2 });
+  }
+  return stars;
+})();
+
+const ENV_SPACE_ORBITS = [
+  { cx:5.5, cz:5.5, rx:2.0, rz:1.1 },  // planet orbit
+  { cx:5.5, cz:5.5, rx:1.1, rz:0.60 }, // ring inner
+];
+
+const ENV_SPACE_PLANETS = [
+  { gx:5.5, gz:5.5, r:0.55 }, // gas giant
+  { gx:7.2, gz:1.5, r:0.22 }, // pulsar marker
+  { gx:1.5, gz:6.5, r:0.30 }, // black hole accretion
+];
+
+const VIEW = {
+  canvas:null, ctx2d:null, animFrame:null,
+  pulses:{}, secondary:{}, pos:{}, tgt:{}, t:0,
+};
+
+function isoP(gx, gz, ox, oy, tw, th) {
+  return { sx: ox+(gx-gz)*tw*0.5, sy: oy+(gx+gz)*th*0.5 };
+}
+
+function tileGeom(cw, ch) {
+  const tw = Math.min(Math.floor(cw/14), 52);
+  const th = Math.round(tw*0.56);
+  return { tw, th, ox:cw*0.5, oy:ch*0.38-(GRID_N*th)*0.5 };
+}
+
+function updatePositions() {
+  WORLDS[S.world].agents.forEach(a => {
+    const home=AGENT_POS[S.world][a.id]; if (!home) return;
+    if (!VIEW.pos[a.id]) { VIEW.pos[a.id]={gx:home.gx,gz:home.gz}; VIEW.tgt[a.id]={gx:home.gx,gz:home.gz}; }
+    const mob=MOBILE[a.id]; if (!mob) return;
+    const pos=VIEW.pos[a.id], tgt=VIEW.tgt[a.id];
+    const dx=tgt.gx-pos.gx, dz=tgt.gz-pos.gz, dist=Math.sqrt(dx*dx+dz*dz);
+    if (dist<0.06) {
+      const angle=Math.random()*Math.PI*2, r=Math.random()*mob.wander;
+      VIEW.tgt[a.id]={ gx:Math.max(0.1,Math.min(GRID_N-0.1,home.gx+Math.cos(angle)*r)), gz:Math.max(0.1,Math.min(GRID_N-0.1,home.gz+Math.sin(angle)*r)) };
+    } else { pos.gx+=(dx/dist)*mob.speed; pos.gz+=(dz/dist)*mob.speed; }
+  });
+}
+
+function drawIsoGrid(c, geom, isSpace, isCity) {
+  const { tw, th, ox, oy } = geom; const N=GRID_N;
+  const top=isoP(0,0,ox,oy,tw,th), right=isoP(N,0,ox,oy,tw,th);
+  const bot=isoP(N,N,ox,oy,tw,th), left =isoP(0,N,ox,oy,tw,th);
+
+  c.beginPath();
+  c.moveTo(top.sx,top.sy); c.lineTo(right.sx,right.sy);
+  c.lineTo(bot.sx,bot.sy); c.lineTo(left.sx,left.sy);
+  c.closePath();
+  c.fillStyle = isSpace ? 'rgba(8,8,14,0.72)' : isCity ? 'rgba(14,13,10,0.65)' : 'rgba(14,14,10,0.60)';
+  c.fill();
+
+  c.strokeStyle = isSpace ? 'rgba(60,60,100,0.38)' : isCity ? 'rgba(90,82,68,0.42)' : 'rgba(88,88,74,0.48)';
+  c.lineWidth=0.6;
+  for (let i=0;i<=N;i++) {
+    const a=isoP(i,0,ox,oy,tw,th),b=isoP(i,N,ox,oy,tw,th);
+    c.beginPath(); c.moveTo(a.sx,a.sy); c.lineTo(b.sx,b.sy); c.stroke();
+    const d=isoP(0,i,ox,oy,tw,th),e=isoP(N,i,ox,oy,tw,th);
+    c.beginPath(); c.moveTo(d.sx,d.sy); c.lineTo(e.sx,e.sy); c.stroke();
+  }
+
+  c.strokeStyle = isSpace ? 'rgba(80,80,140,0.65)' : isCity ? 'rgba(112,102,84,0.72)' : 'rgba(108,108,90,0.75)';
+  c.lineWidth=1;
+  c.beginPath();
+  c.moveTo(top.sx,top.sy); c.lineTo(right.sx,right.sy);
+  c.lineTo(bot.sx,bot.sy); c.lineTo(left.sx,left.sy);
+  c.closePath(); c.stroke();
+}
+
+function drawEnvWater(c, geom) {
+  const { tw, th, ox, oy }=geom;
+  ENV_WATER_RIPPLES.forEach(r => {
+    const {sx,sy}=isoP(r.gx,r.gz,ox,oy,tw,th);
+    const prog=((VIEW.t*0.5+r.phase)%1.0);
+    const radius=prog*tw*0.85, alpha=(1-prog)*0.45;
+    c.beginPath(); c.ellipse(sx,sy,Math.max(0.5,radius),Math.max(0.5,radius*0.32),0,0,Math.PI*2);
+    c.strokeStyle=`rgba(95,95,82,${alpha})`; c.lineWidth=0.6; c.stroke();
+  });
+}
+
+function drawEnvCity(c, geom) {
+  const { tw, th, ox, oy }=geom;
+  ENV_CITY_BLOCKS.forEach(b => {
+    const htPx = b.h * th * 1.5;
+    const tl=isoP(b.gx,       b.gz,       ox,oy,tw,th);
+    const tr=isoP(b.gx+b.w,   b.gz,       ox,oy,tw,th);
+    const br=isoP(b.gx+b.w,   b.gz+b.d,   ox,oy,tw,th);
+    const bl=isoP(b.gx,       b.gz+b.d,   ox,oy,tw,th);
+    c.lineWidth=0.7;
+    // left face
+    c.beginPath();
+    c.moveTo(tl.sx,tl.sy-htPx); c.lineTo(bl.sx,bl.sy-htPx);
+    c.lineTo(bl.sx,bl.sy);       c.lineTo(tl.sx,tl.sy);
+    c.closePath();
+    c.fillStyle='rgba(22,20,16,0.50)'; c.fill();
+    c.strokeStyle='rgba(105,98,82,0.52)'; c.stroke();
+    // right face
+    c.beginPath();
+    c.moveTo(tr.sx,tr.sy-htPx); c.lineTo(br.sx,br.sy-htPx);
+    c.lineTo(br.sx,br.sy);       c.lineTo(tr.sx,tr.sy);
+    c.closePath();
+    c.fillStyle='rgba(18,16,12,0.45)'; c.fill();
+    c.strokeStyle='rgba(90,84,70,0.45)'; c.stroke();
+    // top face
+    c.beginPath();
+    c.moveTo(tl.sx,tl.sy-htPx); c.lineTo(tr.sx,tr.sy-htPx);
+    c.lineTo(br.sx,br.sy-htPx); c.lineTo(bl.sx,bl.sy-htPx);
+    c.closePath();
+    c.fillStyle='rgba(30,28,22,0.55)'; c.fill();
+    c.strokeStyle='rgba(115,108,90,0.58)'; c.stroke();
+  });
+}
+
+function drawEnvSpace(c, geom) {
+  const { tw, th, ox, oy }=geom;
+
+  // Background stars — blink gently
+  ENV_SPACE_STARS.forEach(s => {
+    const {sx,sy}=isoP(s.gx,s.gz,ox,oy,tw,th);
+    const twinkle=Math.sin(VIEW.t*s.twinkle+s.phase)*0.3+0.7;
+    const a=s.brightness*twinkle*0.7;
+    c.fillStyle=`rgba(200,200,220,${a})`;
+    const sr=s.r*0.7;
+    c.fillRect(Math.round(sx-sr*0.5),Math.round(sy-sr*0.5),Math.ceil(sr),Math.ceil(sr));
+  });
+
+  // Orbital paths as iso-space ellipses (sampled)
+  ENV_SPACE_ORBITS.forEach((orb,oi) => {
+    c.beginPath();
+    for (let i=0;i<=72;i++) {
+      const angle=(i/72)*Math.PI*2;
+      const gx=orb.cx+Math.cos(angle)*orb.rx;
+      const gz=orb.cz+Math.sin(angle)*orb.rz;
+      const {sx,sy}=isoP(gx,gz,ox,oy,tw,th);
+      i===0?c.moveTo(sx,sy):c.lineTo(sx,sy);
+    }
+    c.closePath();
+    c.strokeStyle=oi===0?'rgba(70,70,120,0.28)':'rgba(80,80,140,0.20)';
+    c.lineWidth=0.6; c.stroke();
+  });
+
+  // Planet bodies
+  ENV_SPACE_PLANETS.forEach((p,pi) => {
+    const {sx,sy}=isoP(p.gx,p.gz,ox,oy,tw,th);
+    const r=p.r*tw*0.22;
+    // pulsing glow for black hole
+    const glowR = pi===2 ? r*(1+Math.sin(VIEW.t*0.8)*0.15) : r;
+    c.beginPath(); c.ellipse(sx,sy,glowR,glowR*0.45,0,0,Math.PI*2);
+    const colors=['rgba(80,75,130,0.55)','rgba(100,95,80,0.50)','rgba(20,20,40,0.80)'];
+    c.strokeStyle=colors[pi]; c.lineWidth=pi===2?1.2:0.9; c.stroke();
+    // ring system hint around planet
+    if (pi===0) {
+      c.beginPath(); c.ellipse(sx,sy,glowR*1.8,glowR*0.55,0,0,Math.PI*2);
+      c.strokeStyle='rgba(80,75,130,0.25)'; c.lineWidth=0.5; c.stroke();
+    }
+  });
+
+  // Pulsar tick — tiny flash at fixed interval
+  const pulsarPos=AGENT_POS.space.pulsar;
+  const {sx:psx,sy:psy}=isoP(pulsarPos.gx,pulsarPos.gz,ox,oy,tw,th);
+  const pTick=Math.sin(VIEW.t*4.7); // ~1.34s period at 60fps
+  if (pTick>0.96) {
+    c.beginPath(); c.arc(psx,psy,tw*0.12,0,Math.PI*2);
+    c.fillStyle=`rgba(180,220,255,${(pTick-0.96)*25})`; c.fill();
+  }
+}
+
+function drawViz() {
+  const canvas=VIEW.canvas, c=VIEW.ctx2d;
+  if (!canvas||!c) return;
+  const cw=canvas.clientWidth, ch=canvas.clientHeight;
+  c.clearRect(0,0,cw,ch); VIEW.t+=0.016;
+  updatePositions();
+  const geom=tileGeom(cw,ch);
+  const isSpace=S.world==='space';
+  const isCity=S.world==='city';
+  drawIsoGrid(c,geom,isSpace,isCity);
+  if (S.world==='water')  drawEnvWater(c,geom);
+  if (S.world==='city')   drawEnvCity(c,geom);
+  if (S.world==='space')  drawEnvSpace(c,geom);
+
+  const now=Date.now();
+  WORLDS[S.world].agents.forEach(a => {
+    const home=AGENT_POS[S.world][a.id]; if (!home) return;
+    const curPos=VIEW.pos[a.id]||home;
+    const {sx,sy}=isoP(curPos.gx,curPos.gz,geom.ox,geom.oy,geom.tw,geom.th);
+    const age   =now-(VIEW.pulses[a.id]||0);
+    const secAge=now-(VIEW.secondary[a.id]||0);
+    const pulsed  =age<2800;
+    const involved=!pulsed&&secAge<3200;
+    const warm    =age<8000||secAge<5000;
+    const dot     =geom.tw*0.13;
+
+    if (pulsed) {
+      const t=age/2800, r=dot+t*geom.tw*0.55;
+      c.beginPath(); c.ellipse(sx,sy,Math.max(0.5,r),Math.max(0.5,r*0.38),0,0,Math.PI*2);
+      c.strokeStyle=isSpace?`rgba(160,180,255,${(1-t)*0.55})`:isCity?`rgba(220,190,130,${(1-t)*0.55})`:`rgba(196,196,170,${(1-t)*0.55})`;
+      c.lineWidth=0.8; c.stroke();
+      c.fillStyle=isSpace?`rgba(200,220,255,${0.65+(1-t)*0.35})`:isCity?`rgba(240,210,150,${0.65+(1-t)*0.35})`:`rgba(228,228,204,${0.65+(1-t)*0.35})`;
+    } else if (involved) {
+      const t2=secAge/3200;
+      c.fillStyle=isSpace?`rgba(140,160,220,${0.7-t2*0.3})`:isCity?`rgba(200,165,100,${0.7-t2*0.3})`:`rgba(180,160,130,${0.7-t2*0.3})`;
+    } else if (warm) {
+      c.fillStyle=isSpace?'rgba(120,130,180,0.75)':isCity?'rgba(148,128,90,0.80)':'rgba(138,138,118,0.80)';
+    } else {
+      c.fillStyle=isSpace?'rgba(55,55,90,0.65)':isCity?'rgba(80,70,50,0.65)':'rgba(78,78,64,0.65)';
+    }
+
+    c.fillRect(Math.round(sx-dot*0.5),Math.round(sy-dot*0.5),Math.ceil(dot),Math.ceil(dot));
+
+    // movement trail
+    if (MOBILE[a.id]&&VIEW.tgt[a.id]) {
+      const tgt=VIEW.tgt[a.id];
+      const dx=tgt.gx-curPos.gx, dz=tgt.gz-curPos.gz, speed=Math.sqrt(dx*dx+dz*dz);
+      if (speed>0.3&&!pulsed) {
+        const tp=isoP(curPos.gx-(dx/speed)*0.3, curPos.gz-(dz/speed)*0.3, geom.ox,geom.oy,geom.tw,geom.th);
+        c.fillStyle=isSpace?'rgba(55,55,90,0.25)':isCity?'rgba(80,70,48,0.28)':'rgba(70,70,58,0.28)';
+        c.fillRect(Math.round(tp.sx-dot*0.4),Math.round(tp.sy-dot*0.4),Math.ceil(dot*0.8),Math.ceil(dot*0.8));
+      }
+    }
+  });
+}
+
+function startViz() {
+  const canvas=document.getElementById('world-canvas');
+  VIEW.canvas=canvas; VIEW.ctx2d=canvas.getContext('2d');
+  function resize(){
+    const wrap=canvas.parentElement;
+    const W=wrap.offsetWidth,H=wrap.offsetHeight,dpr=devicePixelRatio||1;
+    canvas.width=W*dpr; canvas.height=H*dpr;
+    canvas.style.width=W+'px'; canvas.style.height=H+'px';
+    VIEW.ctx2d.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); VIEW._onResize=resize; window.addEventListener('resize',VIEW._onResize);
+  function loop(){ drawViz(); VIEW.animFrame=requestAnimationFrame(loop); }
+  loop();
+}
+
+function stopViz() {
+  if (VIEW.animFrame) cancelAnimationFrame(VIEW.animFrame);
+  VIEW.animFrame=null;
+  if (VIEW._onResize){ window.removeEventListener('resize',VIEW._onResize); VIEW._onResize=null; }
+  if (VIEW.ctx2d&&VIEW.canvas) VIEW.ctx2d.clearRect(0,0,VIEW.canvas.clientWidth,VIEW.canvas.clientHeight);
+  VIEW.canvas=null; VIEW.ctx2d=null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+initWorld('water');
+
+document.querySelectorAll('.world-btn').forEach(btn=>
+  btn.addEventListener('click',()=>{ if(S.running) stopEngine(); initWorld(btn.dataset.world); })
+);
+document.getElementById('start-btn').addEventListener('click',()=>S.running?stopEngine():startEngine());
+
+
+document.getElementById('density-slider').addEventListener('input', e=>{ S.density=parseFloat(e.target.value); });
+document.getElementById('vol-slider').addEventListener('input', e=>{ if(masterGain) masterGain.gain.setTargetAtTime(parseFloat(e.target.value),ctx.currentTime,0.1); });
+document.getElementById('ghost-slider').addEventListener('input', e=>{ if(ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(parseFloat(e.target.value),ctx.currentTime,0.1); });
+document.getElementById('bpm-slider').addEventListener('input', e=>{ S.bpm=parseInt(e.target.value); document.getElementById('bpm-val').textContent=S.bpm; });
+
+setInterval(()=>{ if(S.running) updateClock(); },1000);
+</script>
+</body>
+</html>
