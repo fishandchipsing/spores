@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ambient lab</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0a08; --dim: #1a1a16; --muted: #38382f; --text: #7a7a6e;
+  --accent: #c4c4aa; --event: #e4e4cc; --hi: #a0c0a0;
+}
+html, body {
+  height: 100%; background: var(--bg); color: var(--text);
+  font-family: 'IBM Plex Mono', monospace; font-weight: 300;
+  font-size: 11px; line-height: 1.6; overflow: hidden; user-select: none;
+}
+
+/* ── header ─────────────────────────────────────────────────── */
+#hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px; height: 44px; border-bottom: 1px solid var(--dim);
+  flex-shrink: 0;
+}
+#logo { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-right: 28px; }
+#world-tabs { display: flex; gap: 20px; }
+.wtab {
+  background: none; border: none; color: var(--muted); font-family: inherit;
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  cursor: pointer; padding: 0; position: relative; transition: color 0.3s;
+}
+.wtab::after { content: ''; position: absolute; bottom: -3px; left: 0; width: 0; height: 1px; background: var(--accent); transition: width 0.3s; }
+.wtab.active { color: var(--accent); } .wtab.active::after { width: 100%; }
+.wtab:hover { color: var(--text); }
+#hdr-right { display: flex; align-items: center; gap: 16px; }
+#run-status { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; }
+#run-status.on { color: var(--hi); }
+#run-btn {
+  background: none; border: 1px solid var(--muted); color: var(--text);
+  font-family: inherit; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 5px 14px; cursor: pointer; transition: all 0.2s;
+}
+#run-btn:hover { border-color: var(--accent); color: var(--accent); }
+#run-btn.on { border-color: var(--dim); color: var(--muted); }
+#run-btn.on:hover { border-color: var(--muted); color: var(--text); }
+#next-cd { font-size: 9px; color: var(--dim); min-width: 36px; text-align: right; }
+
+/* ── main grid ───────────────────────────────────────────────── */
+#main {
+  display: grid; grid-template-columns: 400px 1fr;
+  height: calc(100vh - 44px); overflow: hidden;
+}
+
+/* ── config panel ────────────────────────────────────────────── */
+#cfg-panel {
+  border-right: 1px solid var(--dim); overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--dim) transparent;
+}
+.cfg-section { border-bottom: 1px solid var(--dim); padding: 14px 20px; }
+.cfg-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px;
+}
+.small-btn {
+  background: none; border: 1px solid var(--dim); color: var(--muted);
+  font-family: inherit; font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 2px 7px; cursor: pointer; transition: all 0.2s;
+}
+.small-btn:hover { border-color: var(--muted); color: var(--text); }
+.apply-btn {
+  background: none; border: 1px solid var(--muted); color: var(--text);
+  font-family: inherit; font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 4px 12px; cursor: pointer; margin-top: 10px; transition: all 0.2s; width: 100%;
+}
+.apply-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* prompt textarea */
+#prompt-ta {
+  width: 100%; background: var(--dim); border: none; border-radius: 2px;
+  color: var(--text); font-family: inherit; font-size: 10px; font-weight: 300;
+  line-height: 1.7; padding: 10px; outline: none; resize: vertical;
+  min-height: 120px; user-select: text;
+}
+#prompt-ta:focus { color: var(--accent); }
+
+/* agent rows */
+#agent-list { display: flex; flex-direction: column; gap: 4px; }
+.ag-row {
+  display: grid; grid-template-columns: 16px 80px 1fr 100px;
+  gap: 6px; align-items: center; padding: 3px 0;
+}
+.ag-rm {
+  background: none; border: none; color: var(--dim); font-family: inherit;
+  font-size: 10px; cursor: pointer; padding: 0; line-height: 1;
+  transition: color 0.2s; text-align: center;
+}
+.ag-rm:hover { color: #a06060; }
+.ag-input {
+  background: none; border: none; border-bottom: 1px solid var(--dim);
+  color: var(--text); font-family: inherit; font-size: 10px; font-weight: 300;
+  outline: none; padding: 1px 0; width: 100%; user-select: text; transition: border-color 0.2s;
+}
+.ag-input:focus { border-color: var(--muted); color: var(--accent); }
+.ag-input.label-f { color: var(--accent); font-size: 9px; letter-spacing: 0.06em; }
+.ag-state { font-size: 9px; color: var(--muted); font-style: italic; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ag-state.lit { color: var(--hi); }
+
+/* melody / ambient controls */
+.cfg-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.cfg-row label { font-size: 9px; color: var(--muted); letter-spacing: 0.07em; min-width: 72px; flex-shrink: 0; }
+.cfg-slider { -webkit-appearance: none; flex: 1; height: 1px; background: var(--muted); outline: none; cursor: pointer; }
+.cfg-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+.cfg-val { font-size: 9px; color: var(--text); min-width: 36px; text-align: right; }
+.cfg-select {
+  background: var(--dim); border: 1px solid var(--muted); color: var(--text);
+  font-family: inherit; font-size: 9px; padding: 2px 4px; outline: none; cursor: pointer;
+}
+.cfg-input-wide {
+  background: none; border: none; border-bottom: 1px solid var(--dim);
+  color: var(--text); font-family: inherit; font-size: 9px;
+  outline: none; flex: 1; padding: 1px 0; user-select: text;
+}
+.cfg-input-wide:focus { border-color: var(--muted); color: var(--accent); }
+
+/* ── live panel ──────────────────────────────────────────────── */
+#live-panel { display: flex; flex-direction: column; overflow: hidden; }
+#event-stream { flex: 1; overflow-y: auto; padding: 16px 24px; scrollbar-width: thin; scrollbar-color: var(--dim) transparent; }
+.ev-row {
+  display: grid; grid-template-columns: 40px 60px 1fr 60px;
+  gap: 8px; align-items: baseline; padding: 3px 0;
+  opacity: 0; animation: ev-in 0.6s ease-out forwards;
+}
+@keyframes ev-in { to { opacity: 1; } }
+.ev-t  { font-size: 9px; color: var(--dim); }
+.ev-ag { font-size: 9px; color: var(--muted); opacity: 0.6; letter-spacing: 0.05em; overflow: hidden; white-space: nowrap; }
+.ev-desc { font-size: 11px; font-style: italic; color: var(--event); }
+.ev-type { font-size: 8px; color: var(--muted); opacity: 0.35; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
+.ev-row.distant  .ev-desc { color: var(--muted); font-style: normal; }
+.ev-row.passing  .ev-desc { color: var(--text); }
+.ev-row.shift    .ev-desc { color: var(--accent); font-style: normal; }
+.ev-row.interaction .ev-desc { color: var(--accent); }
+.ev-row.conflict .ev-desc { color: #b08060; }
+.ev-row.residue  .ev-desc { color: var(--muted); }
+
+/* ── bottom strip ────────────────────────────────────────────── */
+#live-bottom {
+  border-top: 1px solid var(--dim); padding: 14px 24px;
+  display: grid; grid-template-columns: 180px 160px 1fr;
+  gap: 24px; flex-shrink: 0;
+}
+.live-hdr { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+
+/* vibe */
+.vibe-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.vibe-lbl { font-size: 9px; color: var(--muted); min-width: 52px; }
+.vibe-track { flex: 1; height: 2px; background: var(--dim); position: relative; }
+.vibe-fill { height: 100%; background: var(--accent); width: 30%; transition: width 0.3s ease, background 0.5s; }
+.vibe-fill.hi { background: var(--hi); }
+.vibe-num { font-size: 9px; color: var(--text); min-width: 28px; text-align: right; }
+
+/* audio debug */
+.dbg-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+.dbg-k { font-size: 9px; color: var(--muted); opacity: 0.45; min-width: 36px; }
+.dbg-v { font-size: 9px; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 130px; }
+
+/* controls */
+.ctrl-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ctrl-row label { font-size: 9px; color: var(--muted); min-width: 48px; flex-shrink: 0; }
+.ctrl-val { font-size: 9px; color: var(--text); min-width: 24px; text-align: right; }
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <div style="display:flex;align-items:center;gap:28px">
+    <span id="logo">ambient lab</span>
+    <div id="world-tabs">
+      <button class="wtab active" data-world="water">water</button>
+      <button class="wtab" data-world="city">city</button>
+      <button class="wtab" data-world="space">space</button>
+    </div>
+  </div>
+  <div id="hdr-right">
+    <span id="next-cd"></span>
+    <span id="run-status">stopped</span>
+    <button id="run-btn">run</button>
+  </div>
+</div>
+
+<div id="main">
+
+  <!-- ── left: config ──────────────────────────────────────── -->
+  <div id="cfg-panel">
+
+    <div class="cfg-section">
+      <div class="cfg-hdr">system prompt</div>
+      <textarea id="prompt-ta" rows="8" spellcheck="false"></textarea>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-hdr">
+        agents
+        <button class="small-btn" id="add-agent-btn">+ add</button>
+      </div>
+      <div id="agent-list"></div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-hdr">melody</div>
+      <div class="cfg-row">
+        <label>scale (hz)</label>
+        <input type="text" id="mel-freqs" class="cfg-input-wide">
+      </div>
+      <div class="cfg-row">
+        <label>wave</label>
+        <select id="mel-wave" class="cfg-select">
+          <option value="sine">sine</option>
+          <option value="triangle">triangle</option>
+          <option value="sawtooth">sawtooth</option>
+          <option value="square">square</option>
+        </select>
+      </div>
+      <div class="cfg-row"><label>vol</label><input type="range" id="mel-vol" min="0" max="0.2" step="0.005" class="cfg-slider"><span class="cfg-val" id="mel-vol-v"></span></div>
+      <div class="cfg-row"><label>attack</label><input type="range" id="mel-atk" min="0.05" max="5" step="0.05" class="cfg-slider"><span class="cfg-val" id="mel-atk-v"></span></div>
+      <div class="cfg-row"><label>hold</label><input type="range" id="mel-hold" min="0.05" max="3" step="0.05" class="cfg-slider"><span class="cfg-val" id="mel-hold-v"></span></div>
+      <div class="cfg-row"><label>release</label><input type="range" id="mel-rel" min="0.1" max="10" step="0.1" class="cfg-slider"><span class="cfg-val" id="mel-rel-v"></span></div>
+      <div class="cfg-row"><label>beat ×</label><input type="range" id="mel-beat" min="0.05" max="4" step="0.05" class="cfg-slider"><span class="cfg-val" id="mel-beat-v"></span></div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-hdr">ambient</div>
+      <div class="cfg-row">
+        <label>noise</label>
+        <select id="amb-noise" class="cfg-select">
+          <option value="brown">brown</option>
+          <option value="pink">pink</option>
+        </select>
+      </div>
+      <div class="cfg-row"><label>rumble hz</label><input type="range" id="amb-rum-f" min="20" max="300" step="1" class="cfg-slider"><span class="cfg-val" id="amb-rum-f-v"></span></div>
+      <div class="cfg-row"><label>rumble db</label><input type="range" id="amb-rum-g" min="0" max="24" step="0.5" class="cfg-slider"><span class="cfg-val" id="amb-rum-g-v"></span></div>
+      <div class="cfg-row"><label>shimmer hz</label><input type="range" id="amb-shim-f" min="100" max="12000" step="50" class="cfg-slider"><span class="cfg-val" id="amb-shim-f-v"></span></div>
+      <div class="cfg-row"><label>shimmer gain</label><input type="range" id="amb-shim-g" min="0" max="0.06" step="0.001" class="cfg-slider"><span class="cfg-val" id="amb-shim-g-v"></span></div>
+      <div class="cfg-row"><label>lfo rate</label><input type="range" id="amb-lfo-r" min="0.003" max="0.5" step="0.003" class="cfg-slider"><span class="cfg-val" id="amb-lfo-r-v"></span></div>
+      <div class="cfg-row"><label>lfo depth</label><input type="range" id="amb-lfo-d" min="0.01" max="0.8" step="0.01" class="cfg-slider"><span class="cfg-val" id="amb-lfo-d-v"></span></div>
+      <button class="apply-btn" id="apply-amb">↺ apply ambient</button>
+    </div>
+
+  </div>
+
+  <!-- ── right: live ───────────────────────────────────────── -->
+  <div id="live-panel">
+    <div id="event-stream"></div>
+
+    <div id="live-bottom">
+
+      <div id="vibe-col">
+        <div class="live-hdr">vibe</div>
+        <div class="vibe-row"><span class="vibe-lbl">activity</span><div class="vibe-track"><div class="vibe-fill" id="vf-act"></div></div><span class="vibe-num" id="vn-act">0.30</span></div>
+        <div class="vibe-row"><span class="vibe-lbl">tension</span><div class="vibe-track"><div class="vibe-fill" id="vf-ten"></div></div><span class="vibe-num" id="vn-ten">0.20</span></div>
+        <div class="vibe-row"><span class="vibe-lbl">register</span><div class="vibe-track"><div class="vibe-fill" id="vf-reg"></div></div><span class="vibe-num" id="vn-reg">0.50</span></div>
+      </div>
+
+      <div id="audio-col">
+        <div class="live-hdr">audio</div>
+        <div class="dbg-row"><span class="dbg-k">ghost</span><span class="dbg-v" id="dbg-ghost">—</span></div>
+        <div class="dbg-row"><span class="dbg-k">sfx</span><span class="dbg-v" id="dbg-sfx">—</span></div>
+        <div class="dbg-row"><span class="dbg-k">tone</span><span class="dbg-v" id="dbg-tone">—</span></div>
+      </div>
+
+      <div id="ctrl-col">
+        <div class="live-hdr">controls</div>
+        <div class="ctrl-row"><label>bpm</label><input type="range" id="bpm-sl" min="20" max="180" value="80" step="1" class="cfg-slider"><span class="ctrl-val" id="bpm-v">80</span></div>
+        <div class="ctrl-row"><label>density</label><input type="range" id="dens-sl" min="0.25" max="3" value="1" step="0.05" class="cfg-slider"><span class="ctrl-val" id="dens-v">1.0</span></div>
+        <div class="ctrl-row"><label>amb vol</label><input type="range" id="ambvol-sl" min="0" max="1" value="0.5" step="0.01" class="cfg-slider"><span class="ctrl-val" id="ambvol-v">0.5</span></div>
+        <div class="ctrl-row"><label>echo</label><input type="range" id="ghost-sl" min="0" max="1" value="0.35" step="0.01" class="cfg-slider"><span class="ctrl-val" id="ghost-v">0.35</span></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// WORLDS
+// ═══════════════════════════════════════════════════════════
+const WORLDS = {
+  water: {
+    label:'water', weathers:['dead calm','light breeze','overcast','light rain','dusk mist'],
+    times:['pre-dawn','early morning','morning','midday','dusk','night'],
+    ambient:{ noiseColor:'brown', rumble:{freq:60,gain:14}, shimmer:{freq:900,q:0.5,gain:0.018}, lfo:{rate:0.08,depth:0.25} },
+    agents:[
+      {id:'heron',       label:'heron',        desc:'solitary, hunts from stillness, strikes fast, territorial of its bank',               state:'motionless at water edge'},
+      {id:'otter',       label:'otter',         desc:'splashing, chewing audibly, high whistle, moves unpredictably along the bank',        state:'somewhere on the near bank'},
+      {id:'swan',        label:'swan',          desc:'mostly silent but takeoff wingbeat is enormous, displaces every other sound',         state:'resting on far water'},
+      {id:'coot',        label:'coot',          desc:'aggressive, repetitive single-note call, skirmishes with other coots over territory', state:'patrolling mid-water'},
+      {id:'water_rail',  label:'water rail',    desc:'hidden deep in reeds — bizarre pig-like squeal, rarely but memorably',               state:'concealed in reeds'},
+      {id:'moorhen',     label:'moorhen',       desc:'nervous, constant soft clucking, panics easily and runs across the surface',         state:'close to reed edge'},
+      {id:'kingfisher',  label:'kingfisher',    desc:'piercing call then a dive, surgical and fast, gone before you registered it',        state:'perched unseen upstream'},
+      {id:'frogs',       label:'frogs',         desc:'colony in reeds, chorus rises and falls, instantly silenced by disturbance',         state:'calling softly'},
+      {id:'fish',        label:'fish',          desc:'shoal moving beneath surface, occasional feeding frenzies, surface breaks',          state:'drifting midwater'},
+      {id:'reed_warblers',label:'reed warblers',desc:'dense chattering chorus from inside the reeds, rises and falls with wind',          state:'singing low'},
+      {id:'midges',      label:'midges',        desc:'thin high collective hum over the surface, thickens in warm still air, disappears in wind', state:'faint in the air'},
+      {id:'wind',        label:'wind',          desc:'moves through reeds and across the surface, shifts direction, stirs everything',     state:'barely present'},
+      {id:'ducks',       label:'ducks',         desc:'small group, social, dabbling, squabbling, landing noisily, suddenly taking flight', state:'resting on far bank'},
+      {id:'rain',        label:'rain',          desc:'arrives gradually or suddenly, drums on every surface, changes everything else',     state:'absent'},
+      {id:'fisherman',   label:'fisherman',     desc:'distant, mostly silent — occasional tackle sound, a cough, a low radio, a slow movement', state:'settled on far bank, quiet'},
+      {id:'drain',       label:'drain / sluice',desc:'man-made control — a trickle normally, becomes a rush after rain, gurgles and echoes', state:'slow trickle'},
+      {id:'bat',         label:'bat',           desc:'nocturnal, echolocation clicks over the surface, erratic darting flight, hunting midges', state:'inactive — daytime'},
+      {id:'willows',     label:'willows',       desc:'weeping willows at the bank — trail in water, wind moves them differently from reeds, creaking', state:'still'},
+    ],
+    systemPrompt:`You are a world engine for a living pond and its banks, edged by trees and marsh. Agents have territories, behaviors, and relationships.
+
+Agents interact: heron strike silences frogs and coots. Swan takeoff displaces everything. Kingfisher dart scatters surface fish. Wind stirs willows and reeds together — they sound different. Rain activates drain. Otter surprises moorhen. Coot skirmishes when territory is crossed. Water rail never leaves reeds — heard but never seen. Midges thicken in warm still air, gone in wind. Bat only at dusk or night, hunting midges. Woodpigeon startles when something large moves. Willows creak in sudden wind gusts.
+
+When two agents with conflicting territory are close, generate "conflict" type: coot vs moorhen, coot vs coot, otter chasing fish to surface.
+
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain absent unless weather says rain. Bat absent unless dusk or night. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  },
+
+  city: {
+    label:'city', weathers:['clear','overcast','light rain','heavy rain','windy','fog'],
+    times:['early morning','rush hour','midday','afternoon','evening rush','night'],
+    ambient:{ noiseColor:'pink', rumble:{freq:75,gain:12}, shimmer:{freq:280,q:1.2,gain:0.012}, lfo:{rate:0.022,depth:0.04} },
+    agents:[
+      {id:'pedestrian',  label:'pedestrian stream',desc:'continuous foot traffic on pavement — heels, soles, shuffling, conversations in passing', state:'moderate flow both directions'},
+      {id:'cyclist',     label:'cyclist',          desc:'wheels on tarmac, bell when weaving through pedestrians, chain, gear shift',           state:'approaching from distance'},
+      {id:'car',         label:'car',              desc:'engine idle at lights, acceleration, door slam, horn — character changes with weather', state:'passing'},
+      {id:'tram',        label:'tram',             desc:'iron wheels on rail, electric overhead hum, bell at stop, doors opening and closing',  state:'between stops'},
+      {id:'pigeons',     label:'pigeons',          desc:'collective wing burst from ledge, cooing, settling, scattering when alarmed',          state:'settled on ledge above'},
+      {id:'busker',      label:'busker',           desc:'music bleeding from an underpass or arcade — instrument changes by day. Coins in case', state:'playing, few listeners'},
+      {id:'cafe',        label:'café',             desc:'espresso machine burst, cups clinking, outdoor chairs scraping, brief laughter',       state:'steady trade'},
+      {id:'vendor',      label:'vendor',           desc:'newspaper shout, market stall call, pricing exchange, cart wheels on stone',          state:'calling intermittently'},
+      {id:'construction',label:'construction',     desc:'pneumatic drill, scaffold clanging, cement mixer, shouted instruction, reversing beep',state:'active nearby'},
+      {id:'shopkeeper',  label:'shopkeeper',       desc:'door buzzer as customer enters, shutter rolling, stock movement, brief exchange',      state:'quiet'},
+      {id:'argument',    label:'argument',         desc:'sudden raised voices, footsteps retreating fast, then silence — nearby pedestrians slow', state:'absent'},
+      {id:'phone_call',  label:'phone call',       desc:'one-sided loud conversation while walking — pacing footsteps, pause, laugh, hang up', state:'absent'},
+      {id:'delivery',    label:'delivery',         desc:'trolley wheels on kerb edge, hand truck banging, van engine idling, package dropped', state:'elsewhere'},
+      {id:'rain_city',   label:'rain',             desc:'rain on shop awnings, drain gurgle, umbrellas snapping open, running footsteps',      state:'absent'},
+      {id:'wind_city',   label:'wind',             desc:'gust channelled between buildings — loose shop sign rattling, newspaper lifted',       state:'still'},
+    ],
+    systemPrompt:`You are a world engine for a living city street. Sound events emerge from what agents are DOING and how they affect each other.
+
+Agents interact: construction noise drowns out busker — busker moves when drill starts. Tram arrival scatters pigeons and pauses pedestrian flow. Argument draws nearby phone_call to silence. Delivery blocks cyclist, causing bell and sharp exchange. Rain triggers umbrella cascade through pedestrian stream. Café becomes audible when construction pauses. Vendor calls louder when tram passes. Shopkeeper reacts to nearby argument.
+
+Time of day matters: early morning — cyclist and vendor dominate, footsteps echo. Rush hour — tram, pedestrian, car all layered dense. Night — busker echoes further, single footsteps, argument carries.
+
+When two agents directly interact, generate "conflict" type: cyclist vs pedestrian near-miss, vendor vs shopkeeper territory dispute, construction vs café complaint.
+
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind only in matching weather. Tram more frequent at rush hour. Night makes single sounds more prominent. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  },
+
+  space: {
+    label:'space', weathers:['solar minimum','solar flare','geomagnetic storm','deep silence','ion storm','coronal mass ejection'],
+    times:['orbital night','transit','aphelion','perihelion','eclipse','deep field'],
+    ambient:{ noiseColor:'pink', rumble:{freq:28,gain:8}, shimmer:{freq:3400,q:0.15,gain:0.016}, lfo:{rate:0.018,depth:0.28} },
+    agents:[
+      {id:'cosmic_bg',   label:'cosmic background',desc:'the 2.7K hum of the universe — omnidirectional, unchanging, barely audible but always present', state:'constant, isotropic'},
+      {id:'solar_wind',  label:'solar wind',       desc:'a sibilant rush of charged particles from the star — varies with solar activity, surges or thins', state:'steady flux'},
+      {id:'pulsar',      label:'pulsar',           desc:'a neutron star rotating — precise electromagnetic pulse on a fixed interval, slightly phase-drifting over epochs', state:'pulsing, 1.34s period'},
+      {id:'satellite',   label:'satellite',        desc:'a faint telemetry tone sweeping past in low orbit — Doppler shift as it approaches and recedes, then silence', state:'below horizon'},
+      {id:'meteorite',   label:'meteorite',        desc:'entry flash — a high-pitched streak through the upper atmosphere becoming low-frequency entry rumble', state:'absent'},
+      {id:'probe',       label:'deep probe',       desc:'ancient transmission from a probe beyond the heliosphere — data burst, then vast static, then silence', state:'no signal received'},
+      {id:'asteroid',    label:'asteroid belt',    desc:'distant grinding and slow displacement — rock on rock, collision resonance, the weight of accumulated time', state:'distant resonance'},
+      {id:'ion_cloud',   label:'ion cloud',        desc:'electromagnetic interference — radio signals fragment and crackle, then clear. Thickens as cloud drifts through', state:'dispersed, distant'},
+      {id:'planet',      label:'planet',           desc:'magnetosphere of a gas giant — a massive slow oscillation, 40-second cycle, sub-bass resonance felt more than heard', state:'inhaling'},
+      {id:'ring_system', label:'ring system',      desc:'ice particles and rock in orbit — a continuous crystalline high hiss, very fine, structure audible within it', state:'steady circulation'},
+      {id:'black_hole',  label:'black hole',       desc:'gravitational bass at the edge of detection — everything slightly bends toward it, distorts nearby signal frequency', state:'distant, felt not heard'},
+      {id:'quasar',      label:'quasar',           desc:'a periodic jet of energy from a distant galactic core — a burst of high-frequency signal repeating over vast intervals', state:'between bursts'},
+      {id:'nebula',      label:'nebula',           desc:'electromagnetic drift through an ionised dust cloud — a low staticky rustle, gradual and vast, signals scatter through it', state:'drifting through edge'},
+      {id:'comet',       label:'comet tail',       desc:'sublimating ice vapor streaming behind — a faint high-frequency hiss that sweeps in the direction of travel', state:'approaching perihelion'},
+    ],
+    systemPrompt:`You are a world engine translating electromagnetic and gravitational events of deep space into sound. Nothing here is natural sound — everything is translated: electromagnetic waves as tone, gravity as bass, particle streams as noise, distance as silence. The listener is a sensor array, not a human ear.
+
+Agents affect each other: Solar flare amplifies ion cloud interference, which fragments satellite telemetry. Pulsar rhythm becomes confused near black hole gravity well. Meteorite entry disrupts ring system resonance. Ion storm overwhelms cosmic background. Probe signal passes through nebula dust and arrives fragmented and phase-shifted. Planet breath cycle creates tidal pull on nearby signal paths. Comet tail hiss intensifies as it approaches perihelion. Quasar jet briefly illuminates ion cloud edges.
+
+The environment is vast, cold, mostly silent. Events are rare and significant. When multiple signals interact, the interference pattern itself is the event.
+
+When two agents interact or collide electromagnetically, generate "conflict" type: pulsar phase-locked to planet resonance, ion cloud absorbing satellite signal, meteorite fragmenting ring system structure.
+
+RULES: 1 sentence — only what is sensed/translated. Evolve agent states. Use vast scale. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  world:'water', running:false, bpm:80, density:1.0,
+  weather:'', timeOfDay:'', agentStates:{}, recentEvents:[],
+  eventCount:0, nextAt:null, nextTimeout:null, cdInterval:null,
+};
+
+// ═══════════════════════════════════════════════════════════
+// MELODY CFG + VIBE
+// ═══════════════════════════════════════════════════════════
+const MELODY_CFG = {
+  water: { freqs:[261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.26,783.99,880.00], wave:'sine',    vol:0.075, atk:0.6, hold:0.25, rel:2.8, beatMult:0.5 },
+  city:  { freqs:[110.00,123.47,130.81,146.83,164.81,174.61,196.00,220.00,246.94,261.63], wave:'triangle',vol:0.060, atk:0.3, hold:0.20, rel:1.8, beatMult:0.25 },
+  space: { freqs:[32.70,36.71,41.20,48.99,55.00,65.41,82.41,110.00],                      wave:'sine',    vol:0.085, atk:2.5, hold:1.20, rel:5.5, beatMult:2.0 },
+};
+const beatMs = () => 60000 / S.bpm;
+
+const VIBE = { activity:0.3, tension:0.2, register:0.5 };
+const VIBE_TYPE = {
+  moment:{activity:0.65,tension:0.35}, interaction:{activity:0.88,tension:0.70},
+  shift:{activity:0.60,tension:0.50},  passing:{activity:0.48,tension:0.25},
+  distant:{activity:0.28,tension:0.15},residue:{activity:0.18,tension:0.10},
+  conflict:{activity:0.80,tension:0.90},
+};
+const VIBE_TIME = {
+  'late night':0.15,'night':0.20,'early morning':0.30,'dawn':0.40,
+  'morning':0.65,'midday':0.82,'afternoon':0.70,'dusk':0.45,'evening':0.35,
+};
+function updateVibe(ev) {
+  const tgt = VIBE_TYPE[ev?.type] || {activity:0.4,tension:0.3};
+  VIBE.activity += (tgt.activity - VIBE.activity) * 0.35;
+  VIBE.tension  += (tgt.tension  - VIBE.tension)  * 0.30;
+  const tod = (S.timeOfDay||'').toLowerCase();
+  for (const [k,v] of Object.entries(VIBE_TIME)) {
+    if (tod.includes(k)) { VIBE.register += (v - VIBE.register)*0.15; break; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// WEB AUDIO
+// ═══════════════════════════════════════════════════════════
+let ctx=null, masterGain=null, ambGain=null;
+let ns1=null,ns2=null,lfo1=null,lfo2=null;
+let ghostMasterGain=null, melodyTimer=null;
+const GHOST = { active:false, files:[], loopTimer:null, refreshTimer:null };
+
+function buildNoise(type) {
+  const len=ctx.sampleRate*4; const buf=ctx.createBuffer(1,len,ctx.sampleRate); const d=buf.getChannelData(0);
+  if (type==='brown') { let l=0; for(let i=0;i<len;i++){const w=Math.random()*2-1;d[i]=(l+0.02*w)/1.02;l=d[i];d[i]*=3.5;} }
+  else { let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0; for(let i=0;i<len;i++){const w=Math.random()*2-1;b0=0.99886*b0+w*0.0555179;b1=0.99332*b1+w*0.0750759;b2=0.96900*b2+w*0.1538520;b3=0.86650*b3+w*0.3104856;b4=0.55000*b4+w*0.5329522;b5=-0.7616*b5-w*0.0168980;d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11;b6=w*0.115926;} }
+  const src=ctx.createBufferSource(); src.buffer=buf; src.loop=true; return src;
+}
+
+function startAmbient(world) {
+  if (!ctx) ctx=new(window.AudioContext||window.webkitAudioContext)();
+  if (ctx.state==='suspended') ctx.resume();
+  stopAmbient();
+  const p=WORLDS[world].ambient;
+  masterGain=ctx.createGain(); masterGain.gain.value=parseFloat(document.getElementById('ambvol-sl').value); masterGain.connect(ctx.destination);
+  ambGain=ctx.createGain(); ambGain.gain.value=0; ambGain.connect(masterGain);
+
+  ns1=buildNoise(p.noiseColor);
+  const ls1=ctx.createBiquadFilter(); ls1.type='lowshelf'; ls1.frequency.value=p.rumble.freq; ls1.gain.value=p.rumble.gain;
+  const nf1=ctx.createBiquadFilter(); nf1.type='peaking';  nf1.frequency.value=p.shimmer.freq; nf1.Q.value=p.shimmer.q||0.5; nf1.gain.value=(p.shimmer.gain||0.01)*800;
+  const lg1=ctx.createGain(); lg1.gain.value=0.55;
+  ns1.connect(ls1); ls1.connect(nf1); nf1.connect(lg1); lg1.connect(ambGain);
+  lfo1=ctx.createOscillator(); lfo1.type='sine'; lfo1.frequency.value=p.lfo.rate;
+  const lf1=ctx.createGain(); lf1.gain.value=p.lfo.depth; lfo1.connect(lf1); lf1.connect(lg1.gain);
+
+  ns2=buildNoise(p.noiseColor);
+  const ls2=ctx.createBiquadFilter(); ls2.type='highshelf'; ls2.frequency.value=p.shimmer.freq*2; ls2.gain.value=(p.shimmer.gain||0.01)*400;
+  const lg2=ctx.createGain(); lg2.gain.value=0;
+  ns2.connect(ls2); ls2.connect(lg2); lg2.connect(ambGain);
+  lfo2=ctx.createOscillator(); lfo2.type='sine'; lfo2.frequency.value=p.lfo.rate*1.618;
+  const lf2=ctx.createGain(); lf2.gain.value=p.lfo.depth*0.65; lfo2.connect(lf2); lf2.connect(lg2.gain);
+
+  ns1.start(); ns2.start(); lfo1.start(); lfo2.start();
+  ambGain.gain.setTargetAtTime(0.52,ctx.currentTime,2.5);
+  lg2.gain.setTargetAtTime(0.30,ctx.currentTime,3.5);
+}
+
+function stopAmbient() {
+  [ns1,ns2,lfo1,lfo2].forEach(n=>{try{n&&n.stop();}catch(e){}});
+  ns1=ns2=lfo1=lfo2=null;
+  if(ambGain){ambGain.disconnect();ambGain=null;}
+}
+
+// ── ghost layer ───────────────────────────────────────────
+async function ghostFetch() {
+  try {
+    const res = await fetch('/sfx-cache');
+    if (res.ok) { const all=await res.json(); const wf=all.filter(f=>f.startsWith(S.world)); GHOST.files=wf.length>0?wf:all; }
+  } catch(e) {}
+}
+async function ghostPlay() {
+  if (!GHOST.active||!GHOST.files.length||!ctx) return;
+  const file=GHOST.files[Math.floor(Math.random()*GHOST.files.length)];
+  try {
+    const res=await fetch(`/sfx-cache/${encodeURIComponent(file)}`);
+    if(!res.ok) return;
+    const buf=await ctx.decodeAudioData(await res.arrayBuffer());
+    const src=ctx.createBufferSource(); src.buffer=buf;
+    const lpf=ctx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=380+Math.random()*220; lpf.Q.value=0.4;
+    const pan=ctx.createStereoPanner(); pan.pan.value=(Math.random()-0.5)*0.6;
+    const gain=ctx.createGain(); gain.gain.value=0;
+    src.connect(lpf); lpf.connect(pan); pan.connect(gain); gain.connect(ghostMasterGain||masterGain||ctx.destination);
+    const vol=parseFloat(document.getElementById('ghost-sl').value);
+    const now=ctx.currentTime, dur=buf.duration;
+    gain.gain.setTargetAtTime(vol*0.36,now,1.2);
+    gain.gain.setTargetAtTime(0,now+dur-1.5,1.0);
+    src.start(); src.stop(now+dur+0.5);
+    dbg('ghost',file);
+  } catch(e){}
+}
+function scheduleGhost() {
+  if(!GHOST.active) return;
+  GHOST.loopTimer=setTimeout(async()=>{ await ghostPlay(); if(Math.random()<0.3) setTimeout(ghostPlay,rnd(3000,9000)); scheduleGhost(); }, 18000+Math.random()*45000);
+}
+function startGhostLayer() {
+  if(!ctx) return; GHOST.active=true;
+  ghostMasterGain=ctx.createGain(); ghostMasterGain.gain.value=parseFloat(document.getElementById('ghost-sl').value); ghostMasterGain.connect(masterGain);
+  ghostFetch(); scheduleGhost();
+  GHOST.refreshTimer=setInterval(ghostFetch,30000);
+}
+function stopGhostLayer() {
+  GHOST.active=false; clearTimeout(GHOST.loopTimer); clearInterval(GHOST.refreshTimer);
+  if(ghostMasterGain){ghostMasterGain.disconnect();ghostMasterGain=null;}
+}
+
+// ── sfx ───────────────────────────────────────────────────
+async function playSFX(prompt, direction, vol=1.0) {
+  dbg('sfx', prompt.slice(0,40));
+  try {
+    const res=await fetch('/sfx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:prompt,duration_seconds:4,prompt_influence:0.4,world:S.world})});
+    if(!res.ok) return;
+    const buf=await ctx.decodeAudioData(await res.arrayBuffer());
+    const src=ctx.createBufferSource(); src.buffer=buf;
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2600; lp.Q.value=0.5;
+    const pan=ctx.createStereoPanner();
+    pan.pan.value=({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction]??0;
+    const sg=ctx.createGain(); sg.gain.value=0.60*vol;
+    src.connect(lp); lp.connect(pan); pan.connect(sg); sg.connect(masterGain||ctx.destination); src.start();
+  } catch(e){console.warn('SFX:',e);}
+}
+function playSounds(sounds,direction) {
+  if(!sounds||!sounds.length) return;
+  sounds.forEach(s=>setTimeout(()=>playSFX(s.prompt,direction,s.vol??1.0).catch(()=>{}),s.delay??0));
+}
+
+// ── melody ────────────────────────────────────────────────
+function playNote(world, freq) {
+  if(!ctx||!masterGain) return;
+  const m=MELODY_CFG[world];
+  const osc=ctx.createOscillator(); const env=ctx.createGain();
+  const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=freq*5;
+  osc.type=m.wave; osc.frequency.value=freq; env.gain.value=0;
+  osc.connect(lp); lp.connect(env); env.connect(masterGain);
+  const t=ctx.currentTime, dur=m.atk+m.hold+m.rel;
+  env.gain.linearRampToValueAtTime(0,t);
+  env.gain.linearRampToValueAtTime(m.vol,t+m.atk);
+  env.gain.setValueAtTime(m.vol,t+m.atk+m.hold);
+  env.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  osc.start(t); osc.stop(t+dur+0.1);
+}
+function playPhrase(world) {
+  const m=MELODY_CFG[world]; if(!m||!ctx||!masterGain||!S.running) return;
+  const len=2+Math.round(VIBE.activity*3);
+  const fl=m.freqs.length;
+  const center=Math.round(VIBE.register*(fl-1));
+  let idx=Math.max(0,Math.min(fl-1,center+Math.floor((Math.random()-0.5)*4)));
+  const notes=[];
+  for(let i=0;i<len;i++){
+    notes.push(m.freqs[Math.max(0,Math.min(fl-1,idx))]);
+    const maxStep=VIBE.tension>0.6?1:VIBE.tension>0.3?2:3;
+    const dir=Math.random()<0.5?1:-1;
+    idx=Math.max(0,Math.min(fl-1,idx+dir*(1+Math.floor(Math.random()*maxStep))));
+  }
+  const spacing=beatMs()*m.beatMult*(1.2-VIBE.activity*0.8);
+  notes.forEach((freq,i)=>setTimeout(()=>{if(!S.running)return;playNote(world,freq);},i*spacing));
+  dbg('tone',notes.map(f=>Math.round(f)+'Hz').join(' → '));
+  const phraseDur=(len-1)*spacing+(m.atk+m.hold+m.rel)*1000;
+  melodyTimer=setTimeout(()=>{if(S.running)playPhrase(S.world);},phraseDur+beatMs());
+}
+function startMelody(world) { stopMelody(); const m=MELODY_CFG[world]; if(!m)return; melodyTimer=setTimeout(()=>{if(S.running)playPhrase(world);},beatMs()*2); }
+function stopMelody() { clearTimeout(melodyTimer); melodyTimer=null; }
+
+// ═══════════════════════════════════════════════════════════
+// RHYTHM
+// ═══════════════════════════════════════════════════════════
+const PHASES=[
+  {minW:10,maxW:28,clusterP:0.06,clusterN:1},{minW:6,maxW:15,clusterP:0.14,clusterN:1},
+  {minW:3,maxW:9,clusterP:0.30,clusterN:2}, {minW:2,maxW:5,clusterP:0.58,clusterN:3},
+  {minW:5,maxW:14,clusterP:0.16,clusterN:1},{minW:8,maxW:22,clusterP:0.08,clusterN:1},
+];
+const PHASE_LEN=[4,3,4,5,3,4];
+let phaseIdx=0, phaseEvts=0;
+function phase(){return PHASES[phaseIdx%PHASES.length];}
+function tickPhase(){if(++phaseEvts>=PHASE_LEN[phaseIdx%PHASE_LEN.length]){phaseEvts=0;phaseIdx++;}}
+function nextDelay(){const p=phase();const raw=rnd(p.minW,p.maxW)*(Math.random()<0.07?rnd(1.5,2.8):1)*1000/S.density;const beat=beatMs();return Math.max(beat,Math.round(raw/beat)*beat);}
+function rnd(a,b){return a+Math.random()*(b-a);}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+// ═══════════════════════════════════════════════════════════
+// CLAUDE
+// ═══════════════════════════════════════════════════════════
+async function callClaude() {
+  const world=WORLDS[S.world];
+  const agentBlock=world.agents.map(a=>`- ${a.label} [${a.id}]: ${a.desc}\n  state: ${S.agentStates[a.id]||a.state}`).join('\n');
+  const recentBlock=S.recentEvents.slice(-5).map(e=>`[${e.agent}] ${e.description}`).join('\n')||'none yet';
+  const prompt=
+`ENVIRONMENT: ${world.label}
+WEATHER / CONDITIONS: ${S.weather}
+TIME / PHASE: ${S.timeOfDay}
+EVENTS SO FAR: ${S.eventCount}
+
+AGENTS:
+${agentBlock}
+
+RECENT (evolve from, don't repeat):
+${recentBlock}
+
+Respond ONLY with valid JSON, no markdown:
+{
+  "description": "one sentence — only what is heard / sensed",
+  "agent": "agent label",
+  "type": "distant|passing|moment|shift|interaction|residue|conflict",
+  "direction": "ahead|behind|left|right|above|all around",
+  "sounds": [
+    { "prompt": "first sound, max 10 words", "delay": 0,    "vol": 0.70 },
+    { "prompt": "second sound, max 10 words","delay": 1200, "vol": 0.42 },
+    { "prompt": "third sound, max 10 words", "delay": 2800, "vol": 0.28 }
+  ],
+  "agent_updates": { "agent_id": "new state" }
+}
+
+sounds: 1 required, 2–3 optional. No sound should be loud or sharp — think layers heard through space.`;
+
+  const res=await fetch('/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:world.systemPrompt,messages:[{role:'user',content:prompt}]})});
+  if(!res.ok) throw new Error(`${res.status}`);
+  const data=await res.json();
+  const t=data.content[0].text.trim().replace(/```json|```/g,'').trim();
+  return JSON.parse(t);
+}
+
+async function fireEvent() {
+  try {
+    const ev=await callClaude();
+    if(ev.agent_updates) {
+      for(const [id,st] of Object.entries(ev.agent_updates)) {
+        S.agentStates[id]=st;
+        // update live state in agent list
+        const el=document.getElementById(`ag-state-${id}`);
+        if(el){el.textContent=st;el.classList.add('lit');setTimeout(()=>el.classList.remove('lit'),3000);}
+      }
+    }
+    S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
+    S.eventCount++; tickPhase(); updateVibe(ev);
+    addEventRow(ev);
+    if(ev.sounds) playSounds(ev.sounds,ev.direction);
+    else if(ev.sound_prompt) playSFX(ev.sound_prompt,ev.direction).catch(()=>{});
+  } catch(e){console.warn('event fail:',e);}
+}
+
+function scheduleNext() {
+  if(!S.running) return;
+  const delay=nextDelay(); S.nextAt=Date.now()+delay;
+  S.nextTimeout=setTimeout(async()=>{
+    if(!S.running) return;
+    const p=phase(); const n=Math.random()<p.clusterP?p.clusterN:1;
+    for(let i=0;i<n;i++){ if(!S.running)break; if(i>0)await sleep(rnd(1200,3500)); await fireEvent(); }
+    scheduleNext();
+  },delay);
+}
+
+function startEngine() {
+  if(!ctx) ctx=new(window.AudioContext||window.webkitAudioContext)();
+  if(ctx.state==='suspended') ctx.resume();
+  const w=WORLDS[S.world];
+  S.weather=w.weathers[Math.floor(Math.random()*w.weathers.length)];
+  S.timeOfDay=w.times[Math.floor(Math.random()*w.times.length)];
+  S.agentStates={}; S.recentEvents=[]; S.eventCount=0; phaseIdx=0; phaseEvts=0;
+  S.running=true;
+  document.getElementById('run-btn').textContent='stop';
+  document.getElementById('run-btn').classList.add('on');
+  document.getElementById('run-status').textContent=`${w.label} · ${S.weather} · ${S.timeOfDay}`;
+  document.getElementById('run-status').classList.add('on');
+  startAmbient(S.world); startGhostLayer(); startMelody(S.world);
+  scheduleNext();
+  S.cdInterval=setInterval(()=>{
+    if(!S.running||!S.nextAt) return;
+    const s=Math.max(0,Math.round((S.nextAt-Date.now())/1000));
+    document.getElementById('next-cd').textContent=s>0?`${s}s`:'';
+  },500);
+}
+
+function stopEngine() {
+  S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval);
+  stopAmbient(); stopGhostLayer(); stopMelody();
+  document.getElementById('run-btn').textContent='run';
+  document.getElementById('run-btn').classList.remove('on');
+  document.getElementById('run-status').textContent='stopped';
+  document.getElementById('run-status').classList.remove('on');
+  document.getElementById('next-cd').textContent='';
+}
+
+// ═══════════════════════════════════════════════════════════
+// UI — EVENT STREAM
+// ═══════════════════════════════════════════════════════════
+function addEventRow(ev) {
+  const stream=document.getElementById('event-stream');
+  const time=new Date().toTimeString().slice(0,5);
+  const div=document.createElement('div');
+  div.className=`ev-row ${ev.type||'moment'}`;
+  div.innerHTML=`<span class="ev-t">${time}</span><span class="ev-ag">${(ev.agent||'').slice(0,12)}</span><span class="ev-desc">${ev.description||''}</span><span class="ev-type">${ev.type||''}</span>`;
+  stream.appendChild(div);
+  stream.scrollTop=stream.scrollHeight;
+  // trim to 60 rows
+  while(stream.children.length>60) stream.removeChild(stream.firstChild);
+}
+
+function dbg(key,val) { const el=document.getElementById(`dbg-${key}`); if(el){el.textContent=val;} }
+
+// ═══════════════════════════════════════════════════════════
+// UI — CONFIG PANEL
+// ═══════════════════════════════════════════════════════════
+function loadWorld(world) {
+  S.world=world;
+  document.querySelectorAll('.wtab').forEach(b=>b.classList.toggle('active',b.dataset.world===world));
+
+  // prompt
+  document.getElementById('prompt-ta').value=WORLDS[world].systemPrompt;
+
+  // agents
+  renderAgents(world);
+
+  // melody
+  const m=MELODY_CFG[world];
+  document.getElementById('mel-freqs').value=m.freqs.join(', ');
+  document.getElementById('mel-wave').value=m.wave;
+  setSlider('mel-vol',m.vol,'mel-vol-v');
+  setSlider('mel-atk',m.atk,'mel-atk-v');
+  setSlider('mel-hold',m.hold,'mel-hold-v');
+  setSlider('mel-rel',m.rel,'mel-rel-v');
+  setSlider('mel-beat',m.beatMult,'mel-beat-v');
+
+  // ambient
+  const p=WORLDS[world].ambient;
+  document.getElementById('amb-noise').value=p.noiseColor;
+  setSlider('amb-rum-f',p.rumble.freq,'amb-rum-f-v');
+  setSlider('amb-rum-g',p.rumble.gain,'amb-rum-g-v');
+  setSlider('amb-shim-f',p.shimmer.freq,'amb-shim-f-v');
+  setSlider('amb-shim-g',p.shimmer.gain,'amb-shim-g-v');
+  setSlider('amb-lfo-r',p.lfo.rate,'amb-lfo-r-v');
+  setSlider('amb-lfo-d',p.lfo.depth,'amb-lfo-d-v');
+}
+
+function setSlider(id, val, vid) {
+  const el=document.getElementById(id); if(!el)return;
+  el.value=val;
+  const vEl=document.getElementById(vid); if(vEl) vEl.textContent=parseFloat(val).toFixed(3).replace(/\.?0+$/,'');
+}
+
+function renderAgents(world) {
+  const list=document.getElementById('agent-list');
+  list.innerHTML='';
+  WORLDS[world].agents.forEach(ag=>{
+    const row=document.createElement('div');
+    row.className='ag-row'; row.dataset.id=ag.id;
+    row.innerHTML=`
+      <button class="ag-rm" data-id="${ag.id}" title="remove">✕</button>
+      <input class="ag-input label-f" data-id="${ag.id}" data-field="label" value="${ag.label}" spellcheck="false">
+      <input class="ag-input" data-id="${ag.id}" data-field="desc" value="${ag.desc}" spellcheck="false">
+      <span class="ag-state" id="ag-state-${ag.id}">${S.agentStates[ag.id]||ag.state}</span>
+    `;
+    list.appendChild(row);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// UI — VIBE METERS
+// ═══════════════════════════════════════════════════════════
+function updateVibeUI() {
+  const set=(id,val)=>{
+    const fill=document.getElementById(`vf-${id}`); const num=document.getElementById(`vn-${id}`);
+    if(fill){fill.style.width=(val*100)+'%'; fill.classList.toggle('hi',val>0.65);}
+    if(num) num.textContent=val.toFixed(2);
+  };
+  set('act',VIBE.activity); set('ten',VIBE.tension); set('reg',VIBE.register);
+}
+setInterval(updateVibeUI, 120);
+
+// ═══════════════════════════════════════════════════════════
+// EVENT LISTENERS
+// ═══════════════════════════════════════════════════════════
+
+// world tabs
+document.querySelectorAll('.wtab').forEach(b=>b.addEventListener('click',()=>{
+  if(S.running) stopEngine();
+  loadWorld(b.dataset.world);
+}));
+
+// run/stop
+document.getElementById('run-btn').addEventListener('click',()=>S.running?stopEngine():startEngine());
+
+// prompt textarea
+document.getElementById('prompt-ta').addEventListener('input',e=>{
+  WORLDS[S.world].systemPrompt=e.target.value;
+});
+
+// agent list: label/desc editing + remove
+document.getElementById('agent-list').addEventListener('input',e=>{
+  const id=e.target.dataset.id; const field=e.target.dataset.field; if(!id||!field) return;
+  const ag=WORLDS[S.world].agents.find(a=>a.id===id); if(ag) ag[field]=e.target.value;
+});
+document.getElementById('agent-list').addEventListener('click',e=>{
+  if(!e.target.classList.contains('ag-rm')) return;
+  const id=e.target.dataset.id;
+  WORLDS[S.world].agents=WORLDS[S.world].agents.filter(a=>a.id!==id);
+  e.target.closest('.ag-row').remove();
+});
+
+// add agent
+document.getElementById('add-agent-btn').addEventListener('click',()=>{
+  const id='agent_'+Date.now();
+  const ag={id,label:'new agent',desc:'describe behavior here',state:'present'};
+  WORLDS[S.world].agents.push(ag);
+  renderAgents(S.world); // re-render full list
+});
+
+// melody sliders
+['mel-vol','mel-atk','mel-hold','mel-rel','mel-beat'].forEach(id=>{
+  const vid=id+'-v'; const key={'mel-vol':'vol','mel-atk':'atk','mel-hold':'hold','mel-rel':'rel','mel-beat':'beatMult'}[id];
+  document.getElementById(id).addEventListener('input',e=>{
+    const v=parseFloat(e.target.value);
+    MELODY_CFG[S.world][key]=v;
+    const vEl=document.getElementById(vid); if(vEl) vEl.textContent=v.toFixed(3).replace(/\.?0+$/,'');
+  });
+});
+document.getElementById('mel-wave').addEventListener('change',e=>{MELODY_CFG[S.world].wave=e.target.value;});
+document.getElementById('mel-freqs').addEventListener('change',e=>{
+  const freqs=e.target.value.split(',').map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n)&&n>0);
+  if(freqs.length>1) MELODY_CFG[S.world].freqs=freqs;
+});
+
+// ambient sliders — just update config; apply button restarts ambient
+const ambSliders=[
+  ['amb-rum-f','rumble','freq'],['amb-rum-g','rumble','gain'],
+  ['amb-shim-f','shimmer','freq'],['amb-shim-g','shimmer','gain'],
+  ['amb-lfo-r','lfo','rate'],['amb-lfo-d','lfo','depth'],
+];
+ambSliders.forEach(([id,group,prop])=>{
+  const vid=id+'-v';
+  document.getElementById(id).addEventListener('input',e=>{
+    const v=parseFloat(e.target.value);
+    WORLDS[S.world].ambient[group][prop]=v;
+    const vEl=document.getElementById(vid); if(vEl) vEl.textContent=v.toFixed(3).replace(/\.?0+$/,'');
+  });
+});
+document.getElementById('amb-noise').addEventListener('change',e=>{WORLDS[S.world].ambient.noiseColor=e.target.value;});
+document.getElementById('apply-amb').addEventListener('click',()=>{
+  if(!S.running||!ctx) return;
+  stopAmbient(); startAmbient(S.world);
+});
+
+// master controls
+document.getElementById('bpm-sl').addEventListener('input',e=>{S.bpm=parseInt(e.target.value);document.getElementById('bpm-v').textContent=S.bpm;});
+document.getElementById('dens-sl').addEventListener('input',e=>{S.density=parseFloat(e.target.value);document.getElementById('dens-v').textContent=parseFloat(e.target.value).toFixed(2);});
+document.getElementById('ambvol-sl').addEventListener('input',e=>{if(masterGain)masterGain.gain.setTargetAtTime(parseFloat(e.target.value),ctx.currentTime,0.1);document.getElementById('ambvol-v').textContent=parseFloat(e.target.value).toFixed(2);});
+document.getElementById('ghost-sl').addEventListener('input',e=>{if(ghostMasterGain)ghostMasterGain.gain.setTargetAtTime(parseFloat(e.target.value),ctx.currentTime,0.1);document.getElementById('ghost-v').textContent=parseFloat(e.target.value).toFixed(2);});
+
+// ── init ─────────────────────────────────────────────────
+loadWorld('water');
+</script>
+</body>
+</html>

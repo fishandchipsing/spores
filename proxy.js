@@ -31,6 +31,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/lab') {
+    const file = path.join(__dirname, 'ambient-lab.html');
+    if (fs.existsSync(file)) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      fs.createReadStream(file).pipe(res);
+    } else {
+      res.writeHead(404); res.end('ambient-lab.html not found');
+    }
+    return;
+  }
+
   if (req.method === 'GET' && req.url === '/walk') {
     const file = path.join(__dirname, 'ambient-walk.html');
     if (fs.existsSync(file)) {
