@@ -126,16 +126,39 @@ html, body {
 
 /* ── live panel ──────────────────────────────────────────────── */
 #live-panel { display: flex; flex-direction: column; overflow: hidden; }
-#event-stream { flex: 1; overflow-y: auto; padding: 16px 24px; scrollbar-width: thin; scrollbar-color: var(--dim) transparent; }
+
+/* now + agent states top area */
+#live-top { display: grid; grid-template-columns: 1fr 220px; flex-shrink: 0; border-bottom: 1px solid var(--dim); min-height: 140px; max-height: 180px; }
+#now-display { padding: 20px 24px; display: flex; flex-direction: column; justify-content: center; gap: 8px; overflow: hidden; }
+#now-header { display: flex; align-items: baseline; gap: 12px; }
+#now-agent { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+#now-type { font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); opacity: 0.5; }
+#now-desc { font-size: 14px; font-style: italic; color: var(--event); line-height: 1.6; }
+#now-sounds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.now-sound-tag { font-size: 8px; color: var(--muted); border: 1px solid var(--dim); padding: 1px 6px; letter-spacing: 0.05em; opacity: 0; transition: opacity 0.4s; }
+.now-sound-tag.visible { opacity: 1; }
+
+/* agent states */
+#state-panel { border-left: 1px solid var(--dim); padding: 10px 14px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--dim) transparent; }
+#state-panel .live-hdr { margin-bottom: 6px; }
+.state-row { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px solid transparent; transition: border-color 0.3s; }
+.state-row.lit { border-color: var(--dim); }
+.state-lbl { font-size: 9px; color: var(--muted); min-width: 72px; flex-shrink: 0; letter-spacing: 0.04em; }
+.state-lbl.active-agent { color: var(--accent); }
+.state-val { font-size: 9px; color: var(--text); font-style: italic; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transition: color 0.4s; }
+.state-val.changed { color: var(--hi); }
+
+/* event stream */
+#event-stream { flex: 1; overflow-y: auto; padding: 12px 24px; scrollbar-width: thin; scrollbar-color: var(--dim) transparent; }
 .ev-row {
-  display: grid; grid-template-columns: 40px 60px 1fr 60px;
-  gap: 8px; align-items: baseline; padding: 3px 0;
-  opacity: 0; animation: ev-in 0.6s ease-out forwards;
+  display: grid; grid-template-columns: 40px 70px 1fr 60px;
+  gap: 8px; align-items: baseline; padding: 2px 0;
+  opacity: 0; animation: ev-in 0.5s ease-out forwards;
 }
 @keyframes ev-in { to { opacity: 1; } }
 .ev-t  { font-size: 9px; color: var(--dim); }
 .ev-ag { font-size: 9px; color: var(--muted); opacity: 0.6; letter-spacing: 0.05em; overflow: hidden; white-space: nowrap; }
-.ev-desc { font-size: 11px; font-style: italic; color: var(--event); }
+.ev-desc { font-size: 10px; font-style: italic; color: var(--event); }
 .ev-type { font-size: 8px; color: var(--muted); opacity: 0.35; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
 .ev-row.distant  .ev-desc { color: var(--muted); font-style: normal; }
 .ev-row.passing  .ev-desc { color: var(--text); }
@@ -251,6 +274,23 @@ html, body {
 
   <!-- ── right: live ───────────────────────────────────────── -->
   <div id="live-panel">
+
+    <!-- now playing + agent states -->
+    <div id="live-top">
+      <div id="now-display">
+        <div id="now-header">
+          <span id="now-agent">—</span>
+          <span id="now-type"></span>
+        </div>
+        <div id="now-desc" style="color:var(--muted);font-style:normal">waiting for first event…</div>
+        <div id="now-sounds"></div>
+      </div>
+      <div id="state-panel">
+        <div class="live-hdr">agents</div>
+        <div id="state-list"></div>
+      </div>
+    </div>
+
     <div id="event-stream"></div>
 
     <div id="live-bottom">
@@ -626,8 +666,10 @@ sounds: 1 required, 2–3 optional. No sound should be loud or sharp — think l
   const res=await fetch('/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:world.systemPrompt,messages:[{role:'user',content:prompt}]})});
   if(!res.ok) throw new Error(`${res.status}`);
   const data=await res.json();
-  const t=data.content[0].text.trim().replace(/```json|```/g,'').trim();
-  return JSON.parse(t);
+  const raw=data.content[0].text||'';
+  const s=raw.indexOf('{'), e=raw.lastIndexOf('}');
+  if(s===-1||e===-1) throw new Error('no JSON in response');
+  return JSON.parse(raw.slice(s,e+1));
 }
 
 async function fireEvent() {
@@ -636,13 +678,16 @@ async function fireEvent() {
     if(ev.agent_updates) {
       for(const [id,st] of Object.entries(ev.agent_updates)) {
         S.agentStates[id]=st;
-        // update live state in agent list
-        const el=document.getElementById(`ag-state-${id}`);
-        if(el){el.textContent=st;el.classList.add('lit');setTimeout(()=>el.classList.remove('lit'),3000);}
+        // update in agent list (left panel)
+        const cfgEl=document.getElementById(`ag-state-${id}`);
+        if(cfgEl){cfgEl.textContent=st;cfgEl.classList.add('lit');setTimeout(()=>cfgEl.classList.remove('lit'),3000);}
+        // update in state panel (right panel)
+        updateStateRow(id,st);
       }
     }
     S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
     S.eventCount++; tickPhase(); updateVibe(ev);
+    updateNowDisplay(ev);
     addEventRow(ev);
     if(ev.sounds) playSounds(ev.sounds,ev.direction);
     else if(ev.sound_prompt) playSFX(ev.sound_prompt,ev.direction).catch(()=>{});
@@ -668,6 +713,14 @@ function startEngine() {
   S.timeOfDay=w.times[Math.floor(Math.random()*w.times.length)];
   S.agentStates={}; S.recentEvents=[]; S.eventCount=0; phaseIdx=0; phaseEvts=0;
   S.running=true;
+  document.getElementById('now-agent').textContent='—';
+  document.getElementById('now-type').textContent='';
+  document.getElementById('now-desc').textContent='listening…';
+  document.getElementById('now-desc').style.color='var(--muted)';
+  document.getElementById('now-desc').style.fontStyle='normal';
+  document.getElementById('now-sounds').innerHTML='';
+  document.getElementById('event-stream').innerHTML='';
+  renderStatePanel(S.world);
   document.getElementById('run-btn').textContent='stop';
   document.getElementById('run-btn').classList.add('on');
   document.getElementById('run-status').textContent=`${w.label} · ${S.weather} · ${S.timeOfDay}`;
@@ -708,6 +761,48 @@ function addEventRow(ev) {
 
 function dbg(key,val) { const el=document.getElementById(`dbg-${key}`); if(el){el.textContent=val;} }
 
+function updateNowDisplay(ev) {
+  document.getElementById('now-agent').textContent=(ev.agent||'').toUpperCase();
+  document.getElementById('now-type').textContent=ev.type||'';
+  const descEl=document.getElementById('now-desc');
+  descEl.textContent=ev.description||'';
+  descEl.style.cssText='';  // reset inline style set on init
+
+  // sounds: show each layer tag briefly
+  const soundsEl=document.getElementById('now-sounds');
+  soundsEl.innerHTML='';
+  (ev.sounds||[]).forEach((s,i)=>{
+    const tag=document.createElement('span');
+    tag.className='now-sound-tag';
+    tag.textContent=s.prompt.slice(0,32);
+    soundsEl.appendChild(tag);
+    setTimeout(()=>tag.classList.add('visible'), s.delay??0);
+    setTimeout(()=>tag.classList.remove('visible'), (s.delay??0)+6000);
+  });
+
+  // briefly highlight the active agent in state panel
+  document.querySelectorAll('.state-lbl').forEach(el=>el.classList.remove('active-agent'));
+  const agents=WORLDS[S.world].agents;
+  const ag=agents.find(a=>a.label.toLowerCase()===(ev.agent||'').toLowerCase()||a.id===(ev.agent||'').toLowerCase());
+  if(ag){ const lbl=document.getElementById(`stlbl-${ag.id}`); if(lbl) lbl.classList.add('active-agent'); }
+}
+
+function renderStatePanel(world) {
+  const list=document.getElementById('state-list'); list.innerHTML='';
+  WORLDS[world].agents.forEach(ag=>{
+    const row=document.createElement('div'); row.className='state-row'; row.id=`strow-${ag.id}`;
+    row.innerHTML=`<span class="state-lbl" id="stlbl-${ag.id}">${ag.label}</span><span class="state-val" id="stval-${ag.id}">${S.agentStates[ag.id]||ag.state}</span>`;
+    list.appendChild(row);
+  });
+}
+
+function updateStateRow(id, newState) {
+  const val=document.getElementById(`stval-${id}`); if(!val) return;
+  val.textContent=newState; val.classList.add('changed');
+  const row=document.getElementById(`strow-${id}`); if(row){row.classList.add('lit');setTimeout(()=>row.classList.remove('lit'),2000);}
+  setTimeout(()=>val.classList.remove('changed'),3000);
+}
+
 // ═══════════════════════════════════════════════════════════
 // UI — CONFIG PANEL
 // ═══════════════════════════════════════════════════════════
@@ -718,8 +813,11 @@ function loadWorld(world) {
   // prompt
   document.getElementById('prompt-ta').value=WORLDS[world].systemPrompt;
 
-  // agents
+  // agents (left config panel)
   renderAgents(world);
+
+  // agent states (right live panel)
+  renderStatePanel(world);
 
   // melody
   const m=MELODY_CFG[world];
