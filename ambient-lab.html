@@ -664,7 +664,7 @@ Respond ONLY with valid JSON, no markdown:
 sounds: 1 required, 2–3 optional. No sound should be loud or sharp — think layers heard through space.`;
 
   const res=await fetch('/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:world.systemPrompt,messages:[{role:'user',content:prompt}]})});
-  if(!res.ok) throw new Error(`${res.status}`);
+  if(!res.ok){ const t=await res.text(); console.error('Anthropic error',res.status,t); throw new Error(`${res.status}: ${t.slice(0,200)}`); }
   const data=await res.json();
   const raw=data.content[0].text||'';
   const s=raw.indexOf('{'), e=raw.lastIndexOf('}');
