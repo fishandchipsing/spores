@@ -83,9 +83,10 @@ const server = http.createServer((req, res) => {
     const apiKey = process.env.ANTHROPIC_KEY;
     if (!apiKey) { res.writeHead(503); res.end('ANTHROPIC_KEY not configured'); return; }
 
-    let body = '';
-    req.on('data', chunk => body += chunk);
+    const bodyChunks = [];
+    req.on('data', chunk => bodyChunks.push(chunk));
     req.on('end', () => {
+      const bodyBuf = Buffer.concat(bodyChunks);
       const options = {
         hostname: ANT_HOST,
         path:     '/v1/messages',
@@ -94,7 +95,7 @@ const server = http.createServer((req, res) => {
           'x-api-key':        apiKey,
           'anthropic-version':'2023-06-01',
           'Content-Type':     'application/json',
-          'Content-Length':   Buffer.byteLength(body),
+          'Content-Length':   bodyBuf.length,
         },
       };
 
@@ -102,11 +103,13 @@ const server = http.createServer((req, res) => {
         const chunks = [];
         proxyRes.on('data', chunk => chunks.push(chunk));
         proxyRes.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          if (proxyRes.statusCode !== 200) console.error(`Claude ${proxyRes.statusCode}:`, buf.toString().slice(0,300));
           res.writeHead(proxyRes.statusCode, {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
           });
-          res.end(Buffer.concat(chunks));
+          res.end(buf);
         });
       });
 
@@ -115,7 +118,7 @@ const server = http.createServer((req, res) => {
         res.writeHead(502); res.end(err.message);
       });
 
-      proxyReq.write(body);
+      proxyReq.write(bodyBuf);
       proxyReq.end();
     });
     return;
