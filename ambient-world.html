@@ -16,15 +16,18 @@
     font-family: 'IBM Plex Mono', monospace; font-weight: 300;
     font-size: 13px; line-height: 1.7; overflow: hidden;
     cursor: default; user-select: none;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 0;
   }
   body::before {
     content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   }
-  #app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; padding: 36px 44px; }
 
-  #top { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 32px; border-bottom: 1px solid var(--dim); }
-  #world-selector { display: flex; gap: 28px; }
+  /* ── World selector ───────────────────────────────────────── */
+  #world-selector {
+    display: flex; gap: 24px; margin-bottom: 20px;
+  }
   .world-btn {
     background: none; border: none; color: var(--muted);
     font-family: inherit; font-size: 10px; font-weight: 300;
@@ -35,69 +38,156 @@
   .world-btn.active { color: var(--accent); }
   .world-btn.active::after { width: 100%; }
   .world-btn:hover { color: var(--text); }
-  #top-right { text-align: right; font-size: 10px; color: var(--muted); letter-spacing: 0.05em; line-height: 1.9; }
-  #top-right .hl { color: var(--text); }
 
-  #stream-wrap { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
-  #world-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  #pulse { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 3px; height: 3px; border-radius: 50%; background: var(--muted); pointer-events: none; z-index: 2; }
-  #pulse.pop { animation: pop-ripple 2.6s ease-out forwards; }
-  @keyframes pop-ripple {
-    0%   { box-shadow: 0 0 0 0 rgba(120,120,100,0.35), 0 0 0 0 rgba(120,120,100,0.12); }
-    100% { box-shadow: 0 0 0 90px rgba(120,120,100,0), 0 0 0 200px rgba(120,120,100,0); }
+  /* ── Radio pill ───────────────────────────────────────────── */
+  #radio {
+    display: flex; align-items: center;
+    background: #111110;
+    border: 1px solid #222220;
+    border-radius: 52px;
+    width: 580px; height: 90px;
+    overflow: hidden;
+    box-shadow: 0 4px 32px rgba(0,0,0,0.55);
+    flex-shrink: 0;
   }
-  #event-log { display: flex; flex-direction: column; position: relative; z-index: 1; }
-  .ev {
-    display: grid; grid-template-columns: 52px 20px 1fr 70px;
-    gap: 10px; align-items: baseline; padding: 4px 0;
-    opacity: 0; transform: translateY(5px);
-    animation: ev-in 0.9s ease-out forwards; transition: opacity 4s ease;
-  }
-  .ev.gone { opacity: 0; }
-  @keyframes ev-in { to { opacity: 1; transform: none; } }
-  .ev-time  { font-size: 10px; color: var(--muted); text-align: right; }
-  .ev-agent { font-size: 9px; color: var(--muted); opacity: 0.55; letter-spacing: 0.06em; overflow: hidden; white-space: nowrap; }
-  .ev-desc  { font-size: 13px; font-style: italic; font-weight: 300; color: var(--event); }
-  .ev-type  { font-size: 9px; color: var(--muted); opacity: 0.35; text-transform: uppercase; letter-spacing: 0.1em; text-align: right; }
-  .ev.distant     .ev-desc { color: var(--muted); font-style: normal; }
-  .ev.passing     .ev-desc { color: var(--text); }
-  .ev.moment      .ev-desc { color: var(--event); font-style: italic; }
-  .ev.shift       .ev-desc { color: var(--accent); font-style: normal; }
-  .ev.interaction .ev-desc { color: var(--accent); font-style: italic; }
-  .ev.residue     .ev-desc { color: var(--muted); font-style: italic; }
-  .ev.conflict    .ev-desc { color: #b08060; font-style: italic; }
-  .ev-silence { grid-column: 1/-1; text-align: center; color: var(--dim); font-size: 9px; letter-spacing: 0.35em; padding: 10px 0; }
 
-  #bottom { border-top: 1px solid var(--dim); padding-top: 20px; display: flex; justify-content: space-between; align-items: center; }
-  #agents-strip { display: flex; gap: 14px; flex-wrap: wrap; max-width: 60%; }
-  .agent-pill { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); opacity: 0.35; transition: opacity 0.7s, color 0.7s; white-space: nowrap; }
-  .agent-pill.lit  { opacity: 1;    color: var(--accent); }
-  .agent-pill.warm { opacity: 0.65; color: var(--text); }
-  #right-controls { display: flex; gap: 16px; align-items: center; }
-  #countdown { font-size: 10px; color: var(--dim); min-width: 30px; text-align: right; }
-  #api-stat  { font-size: 10px; color: var(--muted); }
-  .knob-wrap { display: flex; align-items: center; gap: 8px; }
-  .knob-label { font-size: 9px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
-  .knob-slider { -webkit-appearance: none; appearance: none; width: 52px; height: 1px; background: var(--muted); outline: none; cursor: pointer; }
-  .knob-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); cursor: pointer; }
-  #start-btn { background: none; border: 1px solid var(--muted); color: var(--text); font-family: inherit; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 18px; cursor: pointer; transition: border-color 0.3s, color 0.3s; }
-  #start-btn:hover { border-color: var(--accent); color: var(--accent); }
-  #start-btn.on { border-color: var(--dim); color: var(--muted); }
-  #start-btn.on:hover { border-color: var(--muted); color: var(--text); }
-  #debug-overlay { position:fixed; bottom:38px; left:44px; font-size:9px; letter-spacing:0.07em; z-index:10; line-height:2.0; pointer-events:none; }
-  #debug-overlay .dk { color:var(--muted); opacity:0.45; display:inline-block; width:44px; }
-  #debug-overlay .dv { color:var(--text); transition:opacity 1.2s; }
-  #overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 50; transition: opacity 0.7s; }
-  #overlay.gone { opacity: 0; pointer-events: none; }
-  #ov-inner { width: 400px; display: flex; flex-direction: column; gap: 20px; }
-  .ov-label { font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); }
-  .ov-input { background: none; border: none; border-bottom: 1px solid var(--muted); color: var(--accent); font-family: inherit; font-size: 13px; font-weight: 300; padding: 8px 0; outline: none; width: 100%; transition: border-color 0.3s; }
-  .ov-input:focus { border-color: var(--accent); }
-  .ov-input.err   { border-color: #8a4040; }
-  .ov-note { font-size: 10px; color: var(--muted); line-height: 1.9; }
-  #key-btn { background: none; border: 1px solid var(--muted); color: var(--text); font-family: inherit; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 7px 18px; cursor: pointer; align-self: flex-start; transition: border-color 0.3s, color 0.3s; }
-  #key-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .ov-divider { border: none; border-top: 1px solid var(--dim); margin: 4px 0; }
+  /* ── Circle canvas ─────────────────────────────────────────── */
+  #radio-circle {
+    width: 90px; height: 90px;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+    border-radius: 50%;
+    background: #0a0a08;
+  }
+  #radio-circle::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.6);
+    pointer-events: none; z-index: 2;
+  }
+  #world-canvas { position: absolute; top: 0; left: 0; }
+
+  /* ── Ticker ───────────────────────────────────────────────── */
+  #radio-ticker {
+    flex: 1;
+    overflow: hidden;
+    padding: 0 18px;
+    height: 100%;
+    display: flex; align-items: center;
+    border-left: 1px solid #1c1c18;
+    min-width: 0;
+  }
+  .ticker-mask { overflow: hidden; width: 100%; }
+  #ticker-text {
+    display: inline-block;
+    font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--accent); white-space: nowrap;
+    transform: translateX(0);
+  }
+  #ticker-text.running {
+    animation: ticker-scroll var(--ticker-dur, 18s) linear 0.4s 1 forwards;
+  }
+  @keyframes ticker-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(var(--ticker-shift, -60%)); }
+  }
+
+  /* ── Right controls ────────────────────────────────────────── */
+  #radio-right {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 18px;
+    height: 100%;
+    border-left: 1px solid #1c1c18;
+    flex-shrink: 0;
+  }
+
+  /* Animated bars */
+  #radio-bars { display: flex; align-items: flex-end; gap: 2px; height: 20px; }
+  .rbar {
+    width: 2.5px; background: var(--muted); border-radius: 1px;
+    height: 3px;
+    transition: height 0.2s;
+  }
+  #radio-bars.live .rbar:nth-child(1) { animation: rb1 0.85s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(2) { animation: rb2 0.65s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(3) { animation: rb3 0.95s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(4) { animation: rb4 0.75s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(5) { animation: rb5 1.05s ease-in-out infinite alternate; }
+  @keyframes rb1 { to { height: 14px; } } @keyframes rb2 { to { height: 19px; } }
+  @keyframes rb3 { to { height: 10px; } } @keyframes rb4 { to { height: 17px; } }
+  @keyframes rb5 { to { height: 8px;  } }
+
+  /* Vol */
+  .knob-label { font-size: 8px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; }
+  #vol-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 55px; height: 2px; background: var(--dim);
+    outline: none; border: none; cursor: pointer;
+    border-radius: 1px;
+  }
+  #vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+  }
+
+  /* Start/stop button */
+  #start-btn {
+    width: 26px; height: 26px;
+    background: var(--muted); border: none; border-radius: 4px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--bg); font-size: 9px; font-family: inherit;
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  #start-btn.on { background: var(--accent); }
+
+  /* ── Meta strip below pill ─────────────────────────────────── */
+  #meta {
+    margin-top: 14px;
+    font-size: 9px; color: var(--muted); letter-spacing: 0.08em;
+    display: flex; gap: 12px; align-items: center;
+  }
+  #meta .hl { color: var(--text); }
+  #meta .sep { opacity: 0.3; }
+
+  /* ── Secondary controls (hidden by default, toggle-able) ───── */
+  #secondary {
+    margin-top: 12px;
+    display: none;
+    gap: 20px; align-items: center;
+    font-size: 9px; color: var(--muted);
+  }
+  #secondary.open { display: flex; }
+  .sc-wrap { display: flex; align-items: center; gap: 6px; }
+  .sc-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 60px; height: 2px; background: var(--dim); outline: none; border: none;
+    cursor: pointer; border-radius: 1px;
+  }
+  .sc-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--text); cursor: pointer;
+  }
+  #settings-toggle {
+    margin-top: 10px; background: none; border: none; cursor: pointer;
+    color: var(--muted); font-family: inherit; font-size: 9px;
+    letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.45;
+    transition: opacity 0.3s;
+  }
+  #settings-toggle:hover { opacity: 0.75; }
+
+  /* ── Debug overlay ─────────────────────────────────────────── */
+  #debug-overlay {
+    position: fixed; top: 12px; right: 12px;
+    font-size: 9px; color: var(--muted); line-height: 1.8;
+    pointer-events: none; z-index: 100;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 0;
+  }
+  .dk { opacity: 0.4; margin-right: 6px; }
+  .dv { color: var(--text); opacity: 0.25; transition: opacity 0.5s; }
+
+  /* hidden utility elements */
+  #event-log, #agents-strip, #pulse { display: none; }
 </style>
 </head>
 <body>
@@ -108,49 +198,72 @@
   <div><span class="dk">sfx</span><span class="dv" id="dbg-sfx">—</span></div>
   <div><span class="dk">tone</span><span class="dv" id="dbg-tone">—</span></div>
 </div>
-<div id="app">
-  <div id="top">
-    <div id="world-selector">
-      <button class="world-btn active" data-world="water">water</button>
-      <button class="world-btn" data-world="city">city</button>
-      <button class="world-btn" data-world="forest">forest</button>
-    </div>
-    <div id="top-right">
-      <span id="tr-world" class="hl">water</span><br>
-      <span id="tr-weather">—</span><br>
-      <span id="tr-clock">—</span>
-    </div>
-  </div>
-  <div id="stream-wrap">
+
+<div id="world-selector">
+  <button class="world-btn active" data-world="water">water</button>
+  <button class="world-btn" data-world="city">city</button>
+  <button class="world-btn" data-world="forest">forest</button>
+</div>
+
+<div id="radio">
+  <div id="radio-circle">
     <canvas id="world-canvas"></canvas>
-    <div id="pulse"></div>
-    <div id="event-log"></div>
   </div>
-  <div id="bottom">
-    <div id="agents-strip"></div>
-    <div id="right-controls">
-      <div class="knob-wrap">
-        <span class="knob-label">density</span>
-        <input type="range" id="density-slider" class="knob-slider" min="0.25" max="3" step="0.05" value="1">
-      </div>
-      <div class="knob-wrap">
-        <span class="knob-label">amb</span>
-        <input type="range" id="vol-slider" class="knob-slider" min="0" max="1" step="0.01" value="0.5">
-      </div>
-      <div class="knob-wrap">
-        <span class="knob-label">echo</span>
-        <input type="range" id="ghost-slider" class="knob-slider" min="0" max="1" step="0.01" value="0.35">
-      </div>
-      <div class="knob-wrap">
-        <span class="knob-label">bpm</span>
-        <input type="range" id="bpm-slider" class="knob-slider" min="20" max="180" step="1" value="80">
-        <span id="bpm-val" style="font-size:9px;color:var(--muted);min-width:24px">80</span>
-      </div>
-      <span id="countdown"></span>
-      <span id="api-stat">—</span>
-      <button id="start-btn">begin</button>
+  <div id="radio-ticker">
+    <div class="ticker-mask">
+      <span id="ticker-text">—</span>
     </div>
   </div>
+  <div id="radio-right">
+    <div id="radio-bars">
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+    </div>
+    <div class="sc-wrap" style="gap:6px">
+      <span class="knob-label">vol</span>
+      <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="0.5">
+    </div>
+    <button id="start-btn">▶</button>
+  </div>
+</div>
+
+<div id="meta">
+  <span class="hl" id="tr-world">water</span>
+  <span class="sep">·</span>
+  <span id="tr-weather">—</span>
+  <span class="sep">·</span>
+  <span id="tr-clock">—</span>
+  <span class="sep">·</span>
+  <span id="countdown"></span>
+</div>
+
+<div id="secondary">
+  <div class="sc-wrap">
+    <span class="knob-label">density</span>
+    <input type="range" id="density-slider" class="sc-slider" min="0.25" max="3" step="0.05" value="1">
+  </div>
+  <div class="sc-wrap">
+    <span class="knob-label">echo</span>
+    <input type="range" id="ghost-slider" class="sc-slider" min="0" max="1" step="0.01" value="0.35">
+  </div>
+  <div class="sc-wrap">
+    <span class="knob-label">bpm</span>
+    <input type="range" id="bpm-slider" class="sc-slider" min="20" max="180" step="1" value="80">
+    <span id="bpm-val" style="font-size:9px;color:var(--muted);min-width:22px">80</span>
+  </div>
+</div>
+
+<button id="settings-toggle">· · ·</button>
+
+<!-- Hidden utility elements needed by JS -->
+<div style="display:none" aria-hidden="true">
+  <span id="api-stat"></span>
+  <div id="event-log"></div>
+  <div id="agents-strip"></div>
+  <div id="pulse"></div>
 </div>
 
 <script>
@@ -215,6 +328,10 @@ RULES: 1 sentence — only what is heard. Evolve agent states. Rain absent unles
       { id:'delivery',     label:'delivery',          desc:'trolley wheels on kerb edge, hand truck banging, van engine idling, package dropped on step, buzzer press', state:'elsewhere' },
       { id:'rain_city',    label:'rain',              desc:'rain on shop awnings, drain gurgle, umbrellas snapping open, running footsteps for cover, puddle splash', state:'absent' },
       { id:'wind_city',    label:'wind',              desc:'gust channelled between buildings — loose shop sign rattling, newspaper lifted, awning flap, brief chill silence', state:'still' },
+      { id:'sparrows',   label:'sparrows',   desc:'small flock chattering in a street tree — bursting into flight when startled by a vehicle or pedestrian, settling back within seconds', state:'flitting in plane tree above' },
+      { id:'cat',        label:'cat',         desc:'on a wall or bin lid — watching everything silently, a sudden territorial yowl at night, scrambling quietly down', state:'on a wall nearby, still' },
+      { id:'dog',        label:'dog',         desc:'on a lead with owner — excited bark at a passing dog, collar and lead jangle, paws on tarmac, a sudden lunge and correction', state:'passing with owner' },
+      { id:'urban_fox',  label:'urban fox',   desc:'night creature — clattering bin lids, soft paws on pavement, a sudden piercing screech-bark that cuts through the quiet street', state:'absent — daytime' },
     ],
     systemPrompt: `You are a world engine for a living city street. Sound events emerge from what agents are DOING and how they affect each other.
 
@@ -224,7 +341,7 @@ Time of day matters: early morning — cyclist and vendor dominate, footsteps ec
 
 When two agents directly interact, generate "conflict" type: cyclist vs pedestrian near-miss, vendor vs shopkeeper territory dispute, construction vs café complaint.
 
-RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind only in matching weather. Tram more frequent at rush hour. Night makes single sounds more prominent. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind only in matching weather. Tram more frequent at rush hour. Night makes single sounds more prominent. Vary type: distant/passing/moment/shift/interaction/residue/conflict Sparrows burst from trees when tram arrives or construction starts. Cat tracks dog movements, yowls when cornered. Urban fox only at night — bins and empty streets. Dog pulls toward other animals.`
   },
 
   forest: {
@@ -731,6 +848,25 @@ function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 // DOM
 // ═══════════════════════════════════════════════════════════
 function addEventRow(ev){
+  // Update ticker
+  const tEl = document.getElementById('ticker-text');
+  if (tEl) {
+    const label = (ev.agent || '').toLowerCase();
+    const desc  = ev.description || '';
+    const full  = label ? `${label} — ${desc}` : desc;
+    tEl.classList.remove('running');
+    void tEl.offsetWidth; // force reflow to restart animation
+    tEl.textContent = full;
+    const maskW = tEl.parentElement?.offsetWidth || 200;
+    const textW = tEl.scrollWidth;
+    if (textW > maskW) {
+      const shift = `-${((textW - maskW + 20) / textW * 100).toFixed(1)}%`;
+      const dur   = (textW / 40).toFixed(1) + 's';
+      tEl.style.setProperty('--ticker-shift', shift);
+      tEl.style.setProperty('--ticker-dur', dur);
+      tEl.classList.add('running');
+    }
+  }
   const log=document.getElementById('event-log');
   const time=new Date().toTimeString().slice(0,5);
   const tag=(ev.agent||'').slice(0,5).toLowerCase();
@@ -817,8 +953,9 @@ function initWorld(w){
 
 function startEngine(){
   S.running=true; S.startTime=Date.now();
-  document.getElementById('start-btn').textContent='stop';
+  document.getElementById('start-btn').textContent='■';
   document.getElementById('start-btn').classList.add('on');
+  document.getElementById('radio-bars').classList.add('live');
   startAmbient(S.world); startViz(); startGhostLayer(); startMelody(S.world);
   S.cdInterval=setInterval(()=>{
     if(!S.running||!S.nextAt) return;
@@ -833,8 +970,9 @@ function stopEngine(){
   S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval); clearTimeout(S.weatherTimeout);
   stopAmbient(); stopViz(); stopGhostLayer(); stopMelody();
   document.getElementById('countdown').textContent='';
-  document.getElementById('start-btn').textContent='begin';
+  document.getElementById('start-btn').textContent='▶';
   document.getElementById('start-btn').classList.remove('on');
+  document.getElementById('radio-bars').classList.remove('live');
   setStatus('—');
 }
 
@@ -842,9 +980,9 @@ function stopEngine(){
 // ISOMETRIC VISUALIZATION
 // ═══════════════════════════════════════════════════════════
 const WORLD_PALETTE = {
-  water:  ['#4a7a8a','#6a9aaa','#3a6070','#8ab8c8','#2a5060','#7aa0b0'],
-  city:   ['#8a7a5a','#aa9870','#6a5a3a','#b89858','#786848','#c8ae78'],
-  forest: ['#5a8a4a','#3a6a3a','#7aaa5a','#4a7a3a','#8ac870','#2a5a2a'],
+  water:  ['#00e5ff','#5bc8f5','#c8f542','#ffe156','#7c6ef5','#f0f0f0','#ff4db8','#5bc8f5'],
+  city:   ['#ff4db8','#ffe156','#f542c2','#ff5252','#7c6ef5','#f0f0f0','#00e5ff','#c8f542'],
+  forest: ['#c8f542','#ffe156','#00e5ff','#7c6ef5','#5bc8f5','#f0f0f0','#ff4db8','#f542c2'],
 };
 
 function hexAlpha(hex, a) {
@@ -908,6 +1046,8 @@ const AGENT_POS = {
     argument:    {gx:3.0, gz:3.5}, phone_call:  {gx:5.0, gz:4.5},
     delivery:    {gx:6.2, gz:4.8}, rain_city:   {gx:4.0, gz:0.5},
     wind_city:   {gx:7.5, gz:7.5},
+    sparrows:   {gx:3.8, gz:2.0}, cat:        {gx:5.2, gz:3.8},
+    dog:        {gx:2.8, gz:4.8}, urban_fox:  {gx:6.8, gz:7.0},
   },
   forest: {
     woodpecker:  {gx:2.5, gz:2.0}, owl:        {gx:6.0, gz:2.0},
@@ -932,6 +1072,8 @@ const MOBILE = {
   car:{speed:0.018,wander:7.5},        tram:{speed:0.008,wander:7.0},
   pigeons:{speed:0.009,wander:3.5},    delivery:{speed:0.007,wander:4.5},
   phone_call:{speed:0.005,wander:3.0}, argument:{speed:0.012,wander:2.5},
+  sparrows:{speed:0.009,wander:5.0}, cat:{speed:0.003,wander:3.5},
+  dog:{speed:0.009,wander:4.5},      urban_fox:{speed:0.007,wander:6.0},
   // forest
   deer:{speed:0.004,wander:4.0},      fox:{speed:0.008,wander:5.0},
   squirrel:{speed:0.010,wander:4.5},  crow:{speed:0.006,wander:5.0},
@@ -978,9 +1120,9 @@ function isoP(gx, gz, ox, oy, tw, th) {
 }
 
 function tileGeom(cw, ch) {
-  const tw = Math.min(Math.floor(cw/14), 52);
+  const tw = Math.min(Math.floor(cw/5), 52);
   const th = Math.round(tw*0.56);
-  return { tw, th, ox:cw*0.5, oy:ch*0.38-(GRID_N*th)*0.5 };
+  return { tw, th, ox:cw*0.5, oy:ch*0.5-(GRID_N*th)*0.5 };
 }
 
 function updatePositions() {
@@ -992,7 +1134,7 @@ function updatePositions() {
     const dx=tgt.gx-pos.gx, dz=tgt.gz-pos.gz, dist=Math.sqrt(dx*dx+dz*dz);
     if (dist<0.06) {
       const angle=Math.random()*Math.PI*2, r=Math.random()*mob.wander;
-      VIEW.tgt[a.id]={ gx:Math.max(0.1,Math.min(GRID_N-0.1,home.gx+Math.cos(angle)*r)), gz:Math.max(0.1,Math.min(GRID_N-0.1,home.gz+Math.sin(angle)*r)) };
+      VIEW.tgt[a.id]={ gx:home.gx+Math.cos(angle)*r, gz:home.gz+Math.sin(angle)*r };
     } else { pos.gx+=(dx/dist)*mob.speed; pos.gz+=(dz/dist)*mob.speed; }
     // Update creature angle from movement direction in iso screen space
     const dvx = (tgt.gx - pos.gx) * 1 - (tgt.gz - pos.gz) * 1;
@@ -1109,7 +1251,7 @@ function drawCreatureAt(c2d, agentId, sx, sy, tw, pulsed, involved, warm) {
   const prof = VIEW.creatureProf[agentId]; if (!prof) return;
   const wobble = VIEW.wobble[agentId] || 0;
   const baseAlpha = pulsed ? 0.95 : involved ? 0.72 : warm ? 0.52 : 0.28;
-  const sc = tw * 0.017 * prof.scale;
+  const sc = tw * 0.024 * prof.scale;
 
   // tail dots
   const hist = VIEW.tailHist[agentId] || [];
@@ -1224,15 +1366,10 @@ function drawViz() {
   const canvas=VIEW.canvas, c=VIEW.ctx2d;
   if (!canvas||!c) return;
   const cw=canvas.clientWidth, ch=canvas.clientHeight;
-  c.clearRect(0,0,cw,ch); VIEW.t+=0.016;
+  c.fillStyle='#0a0a08'; c.fillRect(0,0,cw,ch); VIEW.t+=0.016;
   updatePositions();
   const geom=tileGeom(cw,ch);
-  const isForest=S.world==='forest';
-  const isCity=S.world==='city';
-  drawIsoGrid(c,geom,isForest,isCity);
-  if (S.world==='water')  drawEnvWater(c,geom);
-  if (S.world==='city')   drawEnvCity(c,geom);
-  if (S.world==='forest') drawEnvForest(c,geom);
+  const isForest=false, isCity=false;
 
   const now=Date.now();
   WORLDS[S.world].agents.forEach(a => {
@@ -1297,6 +1434,10 @@ document.getElementById('ghost-slider').addEventListener('input', e=>{ if(ghostM
 document.getElementById('bpm-slider').addEventListener('input', e=>{ S.bpm=parseInt(e.target.value); document.getElementById('bpm-val').textContent=S.bpm; });
 
 setInterval(()=>{ if(S.running) updateClock(); },1000);
+
+document.getElementById('settings-toggle').addEventListener('click', () => {
+  document.getElementById('secondary').classList.toggle('open');
+});
 </script>
 </body>
 </html>
