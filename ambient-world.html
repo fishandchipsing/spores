@@ -397,7 +397,7 @@ const GHOST = { active:false, files:[], loopTimer:null, refreshTimer:null };
 
 async function ghostFetch() {
   try {
-    const res = await fetch('http://localhost:3001/sfx-cache');
+    const res = await fetch('/sfx-cache');
     if (res.ok) {
       const all = await res.json();
       const worldFiles = all.filter(f => f.startsWith(S.world));
@@ -410,7 +410,7 @@ async function ghostPlay() {
   if (!GHOST.active || GHOST.files.length===0 || !ctx) return;
   const file = GHOST.files[Math.floor(Math.random()*GHOST.files.length)];
   try {
-    const res = await fetch(`http://localhost:3001/sfx-cache/${encodeURIComponent(file)}`);
+    const res = await fetch(`/sfx-cache/${encodeURIComponent(file)}`);
     if (!res.ok) return;
     const ab  = await res.arrayBuffer();
     const buf = await ctx.decodeAudioData(ab);
