@@ -267,7 +267,7 @@
   </div>
   <div class="mix-row">
     <span class="mix-label">melody</span>
-    <input type="range" id="mix-mel" class="mix-slider" min="0" max="1" step="0.01" value="0.6">
+    <input type="range" id="mix-mel" class="mix-slider" min="0" max="1" step="0.01" value="0.85">
   </div>
   <div class="mix-row">
     <span class="mix-label">sfx</span>
@@ -638,7 +638,7 @@ const MELODY_CFG = {
   // water — high C pentatonic, wet + spacious, barely dissonant
   // rhythms: beat-duration arrays, null = rest (1 beat of silence)
   water:  { freqs:[523.25,587.33,659.26,783.99,880.00,1046.50,1174.66,1318.51],
-            wave:'sine',     vol:0.052, atk:0.010, beatMult:1.6,
+            wave:'sine',     vol:0.16, atk:0.010, beatMult:1.6,
             relShort:0.10, relLong:0.60,
             triMix:0.05, peakHz:1400, peakGain:2,  dlyTime:0.11, dlyWet:0.20, dlyFb:0.32,
             gap:[2.0, 5.0],
@@ -651,7 +651,7 @@ const MELODY_CFG = {
             ]},
   // city — semi-chromatic, triangle wave, digital + dry, strong dissonance
   city:   { freqs:[440.00,493.88,523.25,554.37,659.26,740.00,830.61,880.00,1108.73],
-            wave:'triangle', vol:0.048, atk:0.008, beatMult:0.8,
+            wave:'triangle', vol:0.14, atk:0.008, beatMult:0.8,
             relShort:0.04, relLong:0.16,
             triMix:0.28, peakHz:3600, peakGain:14, dlyTime:0.03, dlyWet:0.04, dlyFb:0.12,
             gap:[0.5, 2.0],
@@ -664,7 +664,7 @@ const MELODY_CFG = {
             ]},
   // forest — G pentatonic mid, sine, very soft + warm, almost no dissonance
   forest: { freqs:[392.00,440.00,523.25,587.33,659.26,783.99,880.00,1046.50],
-            wave:'sine',     vol:0.045, atk:0.018, beatMult:2.0,
+            wave:'sine',     vol:0.13, atk:0.018, beatMult:2.0,
             relShort:0.14, relLong:0.90,
             triMix:0.03, peakHz:700,  peakGain:1,  dlyTime:0.14, dlyWet:0.18, dlyFb:0.28,
             gap:[3.0, 8.0],
