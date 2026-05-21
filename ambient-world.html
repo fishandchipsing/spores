@@ -168,6 +168,26 @@
     -webkit-appearance: none; width: 7px; height: 7px;
     border-radius: 50%; background: var(--text); cursor: pointer;
   }
+  /* ── Mix controls ─────────────────────────────────────────── */
+  #mix {
+    margin-top: 14px;
+    display: flex; gap: 22px; align-items: center;
+  }
+  .mix-row { display: flex; align-items: center; gap: 7px; }
+  .mix-label {
+    font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); width: 38px;
+  }
+  .mix-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 72px; height: 2px; background: var(--dim); outline: none; border: none;
+    cursor: pointer; border-radius: 1px;
+  }
+  .mix-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--text); cursor: pointer;
+  }
+
   #settings-toggle {
     margin-top: 10px; background: none; border: none; cursor: pointer;
     color: var(--muted); font-family: inherit; font-size: 9px;
@@ -238,6 +258,21 @@
   <span id="tr-clock">—</span>
   <span class="sep">·</span>
   <span id="countdown"></span>
+</div>
+
+<div id="mix">
+  <div class="mix-row">
+    <span class="mix-label">noise</span>
+    <input type="range" id="mix-noise" class="mix-slider" min="0" max="1" step="0.01" value="0.6">
+  </div>
+  <div class="mix-row">
+    <span class="mix-label">melody</span>
+    <input type="range" id="mix-mel" class="mix-slider" min="0" max="1" step="0.01" value="0.6">
+  </div>
+  <div class="mix-row">
+    <span class="mix-label">sfx</span>
+    <input type="range" id="mix-sfx" class="mix-slider" min="0" max="1" step="0.01" value="0.5">
+  </div>
 </div>
 
 <div id="secondary">
@@ -396,6 +431,7 @@ const S = {
 let ctx, masterGain, ambGain;
 let noiseSource, noiseFilter, lfoNode, lfoGain;
 let noiseSource2, lfoNode2;
+let noiseChGain = null, melodyGain = null, sfxGain = null;
 
 function buildNoise(type) {
   const bufLen = ctx.sampleRate * 4;
@@ -430,7 +466,19 @@ function startAmbient(world) {
   masterGain.gain.value = parseFloat(document.getElementById('vol-slider').value);
   masterGain.connect(ctx.destination);
 
-  ambGain = ctx.createGain(); ambGain.gain.value=0; ambGain.connect(masterGain);
+  noiseChGain = ctx.createGain();
+  noiseChGain.gain.value = parseFloat(document.getElementById('mix-noise')?.value ?? 0.6);
+  noiseChGain.connect(masterGain);
+
+  melodyGain = ctx.createGain();
+  melodyGain.gain.value = parseFloat(document.getElementById('mix-mel')?.value ?? 0.6);
+  melodyGain.connect(masterGain);
+
+  sfxGain = ctx.createGain();
+  sfxGain.gain.value = parseFloat(document.getElementById('mix-sfx')?.value ?? 0.5);
+  sfxGain.connect(masterGain);
+
+  ambGain = ctx.createGain(); ambGain.gain.value=0; ambGain.connect(noiseChGain);
 
   noiseSource = buildNoise(p.noiseColor);
   const ls = ctx.createBiquadFilter(); ls.type='lowshelf'; ls.frequency.value=p.rumble.freq; ls.gain.value=14;
@@ -467,7 +515,10 @@ function stopAmbient() {
   try { lfoNode      && lfoNode.stop();      } catch(e){}
   try { lfoNode2     && lfoNode2.stop();     } catch(e){}
   noiseSource=noiseSource2=lfoNode=lfoNode2=null;
-  if (ambGain) { ambGain.disconnect(); ambGain=null; }
+  if (ambGain)     { ambGain.disconnect();     ambGain=null; }
+  if (noiseChGain) { noiseChGain.disconnect(); noiseChGain=null; }
+  if (melodyGain)  { melodyGain.disconnect();  melodyGain=null; }
+  if (sfxGain)     { sfxGain.disconnect();     sfxGain=null; }
 }
 
 document.getElementById('vol-slider').addEventListener('input', e => {
@@ -490,11 +541,15 @@ async function playSFX(soundPrompt, direction, vol=1.0) {
     if (ctx.state==='suspended') ctx.resume();
     const buf = await ctx.decodeAudioData(ab);
     const src = ctx.createBufferSource(); src.buffer=buf;
-    const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2600; lp.Q.value=0.5;
+    const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=900; lp.Q.value=0.7;
     const pan = ctx.createStereoPanner();
     pan.pan.value = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction]??0;
-    const sg  = ctx.createGain(); sg.gain.value = 0.60 * vol;
-    src.connect(lp); lp.connect(pan); pan.connect(sg); sg.connect(masterGain||ctx.destination); src.start();
+    const sg  = ctx.createGain(); sg.gain.value = 0;
+    src.connect(lp); lp.connect(pan); pan.connect(sg); sg.connect(sfxGain||masterGain||ctx.destination);
+    const st = ctx.currentTime;
+    sg.gain.setTargetAtTime(0.22 * vol, st, 0.4);
+    sg.gain.setTargetAtTime(0, st + 3.0, 0.8);
+    src.start();
   } catch(e) { console.warn('SFX fail:',e); }
 }
 
@@ -580,15 +635,46 @@ function debugLine(key, val) {
 // MELODIC TONE LAYER
 // ═══════════════════════════════════════════════════════════
 const MELODY_CFG = {
-  // C pentatonic across 3 octaves — bright, water-like
-  water: { freqs:[261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.26,783.99,880.00],
-           wave:'sine',    vol:0.075, atk:0.6, hold:0.25, rel:2.8, beatMult:0.5 },
-  // A minor, lower register — urban metallic
-  city:  { freqs:[110.00,123.47,130.81,146.83,164.81,174.61,196.00,220.00,246.94,261.63],
-           wave:'triangle',vol:0.060, atk:0.3, hold:0.20, rel:1.8, beatMult:0.25 },
-  // F major pentatonic, mid register — open, arboreal
-  forest: { freqs:[174.61,196.00,220.00,261.63,293.66,349.23,392.00,440.00,523.25,587.33],
-            wave:'sine',    vol:0.065, atk:0.8, hold:0.30, rel:3.2, beatMult:0.75 },
+  // water — high C pentatonic, wet + spacious, barely dissonant
+  // rhythms: beat-duration arrays, null = rest (1 beat of silence)
+  water:  { freqs:[523.25,587.33,659.26,783.99,880.00,1046.50,1174.66,1318.51],
+            wave:'sine',     vol:0.052, atk:0.010, beatMult:1.6,
+            relShort:0.10, relLong:0.60,
+            triMix:0.05, peakHz:1400, peakGain:2,  dlyTime:0.11, dlyWet:0.20, dlyFb:0.32,
+            gap:[2.0, 5.0],
+            rhythms:[
+              [1, 0.5, 0.5, null, 1.5],          // note · ripple-ripple · rest · hold
+              [0.5, 0.5, null, null, 1],           // pair · long rest · note
+              [1, null, 0.5, 0.5, null, 1],        // note · rest · pair · rest · note
+              [2, null, null, 0.5, 0.5],           // long hold · silence · two quick
+              [0.5, 0.5, 0.5, null, null, null],   // three quick then trailing silence
+            ]},
+  // city — semi-chromatic, triangle wave, digital + dry, strong dissonance
+  city:   { freqs:[440.00,493.88,523.25,554.37,659.26,740.00,830.61,880.00,1108.73],
+            wave:'triangle', vol:0.048, atk:0.008, beatMult:0.8,
+            relShort:0.04, relLong:0.16,
+            triMix:0.28, peakHz:3600, peakGain:14, dlyTime:0.03, dlyWet:0.04, dlyFb:0.12,
+            gap:[0.5, 2.0],
+            rhythms:[
+              [0.5, 0.5, 0.5, null, 0.5, 0.5],      // three · rest · two
+              [0.5, null, 0.5, 0.5, null, 1],         // jabby syncopated
+              [0.25, 0.25, 0.25, 0.25, null, 0.5],    // fast cluster · rest · held
+              [1, 0.5, 0.5, null, null, 0.5],          // long · pair · silence · snap
+              [0.5, 0.5, null, 0.5, null, 0.5, 0.5],  // alternating stabs
+            ]},
+  // forest — G pentatonic mid, sine, very soft + warm, almost no dissonance
+  forest: { freqs:[392.00,440.00,523.25,587.33,659.26,783.99,880.00,1046.50],
+            wave:'sine',     vol:0.045, atk:0.018, beatMult:2.0,
+            relShort:0.14, relLong:0.90,
+            triMix:0.03, peakHz:700,  peakGain:1,  dlyTime:0.14, dlyWet:0.18, dlyFb:0.28,
+            gap:[3.0, 8.0],
+            rhythms:[
+              [1, null, null, 0.75, 0.75, null, null], // note · long-rest · pair · silence
+              [null, null, 1, null, null, null, 2],     // two-beat rest · note · long rest · hold
+              [0.5, 0.5, null, null, null, 1.5],        // quick pair · long silence · held
+              [null, 1, null, null, 0.5, 0.5],          // rest · note · rests · pair
+              [1, null, 1, null, null, null],            // two notes with breathing
+            ]},
 };
 let melodyTimer = null;
 const beatMs = () => 60000 / S.bpm;
@@ -667,47 +753,153 @@ function scheduleWeatherDrift() {
   S.weatherTimeout = setTimeout(driftWeather, delay);
 }
 
-function playNote(world, freq) {
+function playNote(world, freq, relOverride) {
   if (!ctx || !masterGain) return;
   const m = MELODY_CFG[world];
+
+  // ±25 cent detune — alive, slightly wrong
+  const cents = (Math.random() * 50 - 25);
+  const f = freq * Math.pow(2, cents / 1200);
+
+  // timing jitter ±30ms
+  const t = ctx.currentTime + Math.max(0, Math.random() * 0.06 - 0.03);
+  const atk = m.atk ?? 0.010;
+  const rel = relOverride !== undefined ? relOverride : (m.relShort ?? m.rel ?? 0.10) + Math.random() * 0.04;
+
+  // main oscillator
   const osc = ctx.createOscillator();
+  osc.type = m.wave || 'sine';
+  osc.frequency.value = f;
+
+  // tritone dissonance osc at 15% — always slightly clashing
+  const triOsc = ctx.createOscillator();
+  triOsc.type = 'sine';
+  triOsc.frequency.value = f * Math.pow(2, 6 / 12);
+  const triGain = ctx.createGain();
+  triGain.gain.value = 0.15;
+
+  // shared envelope
   const env = ctx.createGain();
-  const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=freq*5;
-  osc.type=m.wave; osc.frequency.value=freq; env.gain.value=0;
-  osc.connect(lp); lp.connect(env); env.connect(masterGain);
-  const t=ctx.currentTime, dur=m.atk+m.hold+m.rel;
-  env.gain.linearRampToValueAtTime(0,t);
-  env.gain.linearRampToValueAtTime(m.vol,t+m.atk);
-  env.gain.setValueAtTime(m.vol,t+m.atk+m.hold);
-  env.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  osc.start(t); osc.stop(t+dur+0.1);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(m.vol, t + atk);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + atk + rel);
+
+  const dest = melodyGain || masterGain;
+
+  // world-specific synthesis params
+  const triMix  = m.triMix  ?? 0.15;
+  const peakHz  = m.peakHz  ?? 3000;
+  const peakGn  = m.peakGain ?? 8;
+  const dlyTime = m.dlyTime ?? 0.055;
+  const dlyFbV  = m.dlyFb   ?? 0.20;
+  const dlyWetV = m.dlyWet  ?? 0.08;
+
+  // tritone dissonance osc — volume is world-specific
+  triGain.gain.value = triMix;
+
+  // peaking filter — color varies by world
+  const peak = ctx.createBiquadFilter();
+  peak.type = 'peaking'; peak.frequency.value = peakHz; peak.gain.value = peakGn; peak.Q.value = 1.0;
+
+  // light waveshaper — barely-there harmonic warmth
+  const shaper = ctx.createWaveShaper();
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const x = (i * 2) / 256 - 1;
+    curve[i] = x + 0.06 * Math.sin(x * Math.PI);
+  }
+  shaper.curve = curve; shaper.oversample = '2x';
+
+  // delay reverb — depth and time vary by world
+  const dly = ctx.createDelay(0.5); dly.delayTime.value = dlyTime;
+  const fb  = ctx.createGain(); fb.gain.value = dlyFbV;
+  const wet = ctx.createGain(); wet.gain.value = dlyWetV;
+
+  // routing
+  osc.connect(env); triOsc.connect(triGain); triGain.connect(env);
+  env.connect(peak); peak.connect(shaper);
+  shaper.connect(dest);
+  shaper.connect(dly); dly.connect(fb); fb.connect(dly); // feedback loop
+  dly.connect(wet); wet.connect(dest);
+
+  const stopT = t + atk + rel + 0.5;
+  osc.start(t); triOsc.start(t);
+  osc.stop(stopT); triOsc.stop(stopT);
 }
 
 function playPhrase(world) {
   const m = MELODY_CFG[world]; if (!m||!ctx||!masterGain||!S.running) return;
-  // phrase length from activity (2–5 notes)
-  const len = 2 + Math.round(VIBE.activity * 3);
-  // starting pitch: register maps into freq array
-  const fl = m.freqs.length;
-  const center = Math.round(VIBE.register * (fl-1));
-  let idx = Math.max(0, Math.min(fl-1, center + Math.floor((Math.random()-0.5)*4)));
-  // step size: high tension = half-steps (1), low tension = wider leaps (3)
-  const notes = [];
-  for (let i=0; i<len; i++) {
-    notes.push(m.freqs[Math.max(0,Math.min(fl-1,idx))]);
-    const maxStep = VIBE.tension>0.6 ? 1 : VIBE.tension>0.3 ? 2 : 3;
-    const dir = Math.random()<0.5?1:-1;
-    idx = Math.max(0,Math.min(fl-1, idx + dir*(1+Math.floor(Math.random()*maxStep))));
-  }
-  // spacing: high activity = tighter, low activity = more breath
-  const spacing = beatMs() * m.beatMult * (1.2 - VIBE.activity*0.8);
-  notes.forEach((freq,i) => {
-    setTimeout(()=>{ if(!S.running)return; playNote(world,freq); }, i*spacing);
+
+  const fl   = m.freqs.length;
+  const SEMI = Math.pow(2, 1/12);
+  const beat = beatMs() * m.beatMult;
+
+  // pick a rhythm pattern (weighted toward activity level)
+  const patterns = m.rhythms;
+  const pat = patterns[Math.floor(Math.random() * patterns.length)];
+
+  // starting pitch — register maps 0→1 into freq array, jittered ±2
+  const center = Math.round(VIBE.register * (fl - 1));
+  let idx = Math.max(0, Math.min(fl - 1, center + Math.round((Math.random() - 0.5) * 4)));
+
+  // walk through the pattern, collecting {t, freq, isLast}
+  const maxStep = VIBE.tension > 0.6 ? 1 : VIBE.tension > 0.3 ? 2 : 3;
+  let t = 0;
+  const events = [];
+  pat.forEach(dur => {
+    if (dur !== null) {
+      let freq = m.freqs[Math.max(0, Math.min(fl - 1, idx))];
+      if (Math.random() < 0.20) freq *= Math.random() > 0.5 ? SEMI : 1 / SEMI;
+      events.push({ ms: t, freq });
+      // step melody
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      idx = Math.max(0, Math.min(fl - 1, idx + dir * (1 + Math.floor(Math.random() * maxStep))));
+    }
+    t += beat * (dur ?? 1); // null = 1 beat of silence
   });
-  debugLine('tone', notes.map(f=>Math.round(f)+'Hz').join(' → '));
-  // self-schedule next phrase: phrase duration + 1-beat breath
-  const phraseDur = (len-1)*spacing + (m.atk+m.hold+m.rel)*1000;
-  melodyTimer = setTimeout(()=>{ if(S.running) playPhrase(S.world); }, phraseDur + beatMs());
+
+  // schedule notes — last note gets long release, others short
+  events.forEach((ev, i) => {
+    const isLast = i === events.length - 1;
+    const rel = isLast
+      ? (m.relLong ?? 0.40) + Math.random() * 0.12
+      : (m.relShort ?? 0.08) + Math.random() * 0.04;
+    setTimeout(() => { if (S.running) playNote(world, ev.freq, rel); }, ev.ms);
+  });
+
+  debugLine('tone', events.map(e => Math.round(e.freq) + 'Hz').join(' · '));
+
+  // gap to next phrase: variable rest based on world character
+  const [gMin, gMax] = m.gap || [1.0, 3.0];
+  const gap = beat * (gMin + Math.random() * (gMax - gMin));
+  melodyTimer = setTimeout(() => { if (S.running) playPhrase(S.world); }, t + gap);
+}
+
+// Reactive burst — fires immediately on each agent event
+function playReact(ev) {
+  if (!ctx || !masterGain || !S.running) return;
+  const m = MELODY_CFG[S.world]; if (!m) return;
+  const SEMITONE = Math.pow(2, 1/12);
+  const typeMap = {
+    conflict:    { count:4, speedMs:55,  reg:0.90 },
+    interaction: { count:3, speedMs:85,  reg:0.75 },
+    moment:      { count:2, speedMs:120, reg:0.65 },
+    shift:       { count:3, speedMs:110, reg:0.55 },
+    passing:     { count:2, speedMs:160, reg:0.45 },
+    distant:     { count:1, speedMs:200, reg:0.35 },
+    residue:     { count:2, speedMs:240, reg:0.28 },
+  };
+  const cfg = typeMap[ev?.type] || typeMap.moment;
+  const fl = m.freqs.length;
+  const center = Math.round(cfg.reg * (fl - 1));
+  for (let i = 0; i < cfg.count; i++) {
+    if (Math.random() < 0.20) continue; // 20% skip
+    const offset = Math.round((Math.random() - 0.5) * 4);
+    let freq = m.freqs[Math.max(0, Math.min(fl-1, center + offset))];
+    if (Math.random() < 0.25) freq *= Math.random() > 0.5 ? SEMITONE : 1/SEMITONE;
+    const delay = i * cfg.speedMs + (Math.random() * 40 - 20);
+    setTimeout(() => { if (S.running) playNote(S.world, freq); }, Math.max(0, delay));
+  }
 }
 
 function startMelody(world) {
@@ -835,6 +1027,7 @@ async function fireEvent(){
     S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
     S.eventCount++; tickPhase();
     updateVibe(ev);
+    playReact(ev);
     flashAgent(ev.agent, ev.agent_updates);
     updateClock();
     if(ev.sounds) playSounds(ev.sounds, ev.direction);
@@ -1437,6 +1630,15 @@ setInterval(()=>{ if(S.running) updateClock(); },1000);
 
 document.getElementById('settings-toggle').addEventListener('click', () => {
   document.getElementById('secondary').classList.toggle('open');
+});
+document.getElementById('mix-noise').addEventListener('input', e => {
+  if (noiseChGain && ctx) noiseChGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
+});
+document.getElementById('mix-mel').addEventListener('input', e => {
+  if (melodyGain && ctx) melodyGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
+});
+document.getElementById('mix-sfx').addEventListener('input', e => {
+  if (sfxGain && ctx) sfxGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
 });
 </script>
 </body>
