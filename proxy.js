@@ -165,6 +165,8 @@ const server = http.createServer((req, res) => {
               if (err) console.error('cache write error:', err.message);
               else     console.log(`  cached ${filename}`);
             });
+          } else {
+            console.error(`ElevenLabs ${proxyRes.statusCode}:`, audio.toString().slice(0, 400));
           }
 
           res.writeHead(proxyRes.statusCode, {
