@@ -113,7 +113,7 @@
     <div id="world-selector">
       <button class="world-btn active" data-world="water">water</button>
       <button class="world-btn" data-world="city">city</button>
-      <button class="world-btn" data-world="space">space</button>
+      <button class="world-btn" data-world="forest">forest</button>
     </div>
     <div id="top-right">
       <span id="tr-world" class="hl">water</span><br>
@@ -227,36 +227,34 @@ When two agents directly interact, generate "conflict" type: cyclist vs pedestri
 RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind only in matching weather. Tram more frequent at rush hour. Night makes single sounds more prominent. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
   },
 
-  space: {
-    label: 'space',
-    weathers: ['solar minimum','solar flare','geomagnetic storm','deep silence','ion storm','coronal mass ejection'],
-    times:    ['orbital night','transit','aphelion','perihelion','eclipse','deep field'],
-    ambient: { noiseColor:'pink', rumble:{freq:28,gain:0.05}, shimmer:{freq:3400,q:0.15,gain:0.016}, lfo:{rate:0.018,depth:0.28} },
+  forest: {
+    label: 'forest',
+    weathers: ['dry still','overcast','light rain','heavy rain','after rain','frost'],
+    times:    ['pre-dawn','dawn chorus','morning','midday','afternoon','dusk','night'],
+    ambient: { noiseColor:'brown', rumble:{freq:90,gain:0.04}, shimmer:{freq:1800,q:0.5,gain:0.012}, lfo:{rate:0.05,depth:0.22} },
     agents: [
-      { id:'cosmic_bg',   label:'cosmic background', desc:'the 2.7K hum of the universe — omnidirectional, unchanging, barely audible but always present', state:'constant, isotropic' },
-      { id:'solar_wind',  label:'solar wind',         desc:'a sibilant rush of charged particles from the star — varies with solar activity, surges or thins', state:'steady flux' },
-      { id:'pulsar',      label:'pulsar',             desc:'a neutron star rotating — precise electromagnetic pulse on a fixed interval, slightly phase-drifting over epochs', state:'pulsing, 1.34s period' },
-      { id:'satellite',   label:'satellite',          desc:'a faint telemetry tone sweeping past in low orbit — Doppler shift as it approaches and recedes, then silence', state:'below horizon' },
-      { id:'meteorite',   label:'meteorite',          desc:'entry flash — a high-pitched streak through the upper atmosphere becoming low-frequency entry rumble, brief', state:'absent' },
-      { id:'probe',       label:'deep probe',         desc:'ancient transmission from a probe beyond the heliosphere — data burst, then vast static, then silence across light-years', state:'no signal received' },
-      { id:'asteroid',    label:'asteroid belt',      desc:'distant grinding and slow displacement — rock on rock, collision resonance, the weight of accumulated time', state:'distant resonance' },
-      { id:'ion_cloud',   label:'ion cloud',          desc:'electromagnetic interference — radio signals fragment and crackle, then clear. Thickens as cloud drifts through', state:'dispersed, distant' },
-      { id:'planet',      label:'planet',             desc:'magnetosphere of a gas giant — a massive slow oscillation, 40-second cycle, sub-bass resonance felt more than heard', state:'inhaling' },
-      { id:'ring_system', label:'ring system',        desc:'ice particles and rock in orbit — a continuous crystalline high hiss, very fine, structure audible within it', state:'steady circulation' },
-      { id:'black_hole',  label:'black hole',         desc:'gravitational bass at the edge of detection — everything slightly bends toward it, distorts nearby signal frequency', state:'distant, felt not heard' },
-      { id:'quasar',      label:'quasar',             desc:'a periodic jet of energy from a distant galactic core — a burst of high-frequency signal repeating over vast intervals', state:'between bursts' },
-      { id:'nebula',      label:'nebula',             desc:'electromagnetic drift through an ionised dust cloud — a low staticky rustle, gradual and vast, signals scatter through it', state:'drifting through edge' },
-      { id:'comet',       label:'comet tail',         desc:'sublimating ice vapor streaming behind — a faint high-frequency hiss that sweeps in the direction of travel, very fine', state:'approaching perihelion' },
+      { id:'woodpecker',   label:'woodpecker',   desc:'drums hard against dead wood in short bursts, stops abruptly, listens, drums again — territorial against any answering tap', state:'drumming high up' },
+      { id:'owl',          label:'owl',           desc:'nocturnal — territorial hoot carries far through still air, silent flight, hunts only at dusk and night. Daytime: completely silent', state:'roosting, silent' },
+      { id:'deer',         label:'deer',          desc:'slow deliberate footsteps on leaf litter, one snapping twig, full freeze at any sudden disturbance', state:'moving through understory' },
+      { id:'crow',         label:'crow',          desc:'harsh cawing from upper canopy, mob behaviour when a predator is spotted — alarm spreads tree to tree', state:'perched in high canopy' },
+      { id:'jay',          label:'jay',           desc:'loud screeching alarm, mimics buzzard when nervous, betrays the deer\'s position — explosive and unreliable', state:'watching from oak' },
+      { id:'squirrel',     label:'squirrel',      desc:'chattering scolding call, leaping between branches shakes the whole canopy, acorn dropped hard to ground', state:'foraging in upper branches' },
+      { id:'wind_canopy',  label:'wind',          desc:'arrives in the high canopy first — a slow roar above before it reaches the forest floor, bends the crowns in waves', state:'still' },
+      { id:'leaves',       label:'leaves',        desc:'dry leaf litter announces every footstep. Rain hits the canopy in layers: high crown first, then midlayer, then the floor', state:'dry and deep' },
+      { id:'stream',       label:'stream',        desc:'distant water over stones, rises after rain. Muffled by trees, heard only in gaps of silence', state:'low trickle, far off' },
+      { id:'fox',          label:'fox',           desc:'usually silent — a soft careful footstep on dry leaves, or at night a single sharp bark that cuts through everything', state:'elsewhere' },
+      { id:'insects',      label:'insects',       desc:'summer hum of flies and bees in warm light patches. Disappears completely in cold, rain, or after dark', state:'faint in a clearing' },
+      { id:'treecreeper',  label:'treecreeper',   desc:'thin high-pitched call, spirals up bark probing for insects, almost inaudible from more than a few metres', state:'on oak trunk nearby' },
+      { id:'woodmice',     label:'woodmice',      desc:'tiny scurrying in dry leaves, disturbs the litter without warning, gone before it fully registers', state:'hidden below roots' },
+      { id:'rain_forest',  label:'rain',          desc:'hits the high canopy first — a distant roar, then arrives in layers below. Drips from leaves long after it stops. Changes everything', state:'absent' },
     ],
-    systemPrompt: `You are a world engine translating electromagnetic and gravitational events of deep space into sound. Nothing here is natural sound — everything is translated: electromagnetic waves as tone, gravity as bass, particle streams as noise, distance as silence. The listener is a sensor array, not a human ear.
+    systemPrompt: `You are a world engine for a living broadleaf forest. Sound events emerge from what agents are DOING and how they interact across layers — canopy, understory, forest floor.
 
-Agents affect each other: Solar flare amplifies ion cloud interference, which fragments satellite telemetry. Pulsar rhythm becomes confused near black hole gravity well. Meteorite entry disrupts ring system resonance. Ion storm overwhelms cosmic background. Probe signal passes through nebula dust and arrives fragmented and phase-shifted. Planet breath cycle creates tidal pull on nearby signal paths. Comet tail hiss intensifies as it approaches perihelion. Quasar jet briefly illuminates ion cloud edges.
+Agents interact: Jay alarm call reveals the deer. Woodpecker drumming interrupted by wind moving the tree. Crow mobbing drives fox through the understory — deer hears and freezes. Stream rises audibly after rain. Squirrel dropping acorn startles woodmice below. Owl is silent in daylight — only calls at dusk and night. Wind moves canopy before it reaches the floor — two arrivals. Rain hits canopy first then floor — two separate sound events. Insects disappear in cold or rain. Leaves are the floor — every footstep and drip lands there.
 
-The environment is vast, cold, mostly silent. Events are rare and significant. When multiple signals interact, the interference pattern itself is the event.
+When two agents directly interact, generate "conflict" type: crow mobbing owl at its roost, jay betraying deer to fox, two squirrels chasing along a branch.
 
-When two agents interact or collide electromagnetically, generate "conflict" type: pulsar phase-locked to planet resonance, ion cloud absorbing satellite signal, meteorite fragmenting ring system structure.
-
-RULES: 1 sentence — describe only what is electromagnetically perceived / felt. Use language of signal, frequency, resonance, interference, pressure wave, drift, phase. Avoid terrestrial metaphors — no birds, no rain, no human sound. Let agent states evolve. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain and frost only in matching weather. Owl only at dusk or night. Insects only in warm daylight. Let the forest have long silences — the quiet is part of it. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
   }
 
 };
@@ -470,9 +468,9 @@ const MELODY_CFG = {
   // A minor, lower register — urban metallic
   city:  { freqs:[110.00,123.47,130.81,146.83,164.81,174.61,196.00,220.00,246.94,261.63],
            wave:'triangle',vol:0.060, atk:0.3, hold:0.20, rel:1.8, beatMult:0.25 },
-  // Deep drone scale — sparse, vast
-  space: { freqs:[32.70,36.71,41.20,48.99,55.00,65.41,82.41,110.00],
-           wave:'sine',    vol:0.085, atk:2.5, hold:1.20, rel:5.5, beatMult:2.0 },
+  // F major pentatonic, mid register — open, arboreal
+  forest: { freqs:[174.61,196.00,220.00,261.63,293.66,349.23,392.00,440.00,523.25,587.33],
+            wave:'sine',    vol:0.065, atk:0.8, hold:0.30, rel:3.2, beatMult:0.75 },
 };
 let melodyTimer = null;
 const beatMs = () => 60000 / S.bpm;
@@ -810,14 +808,14 @@ const AGENT_POS = {
     delivery:    {gx:6.2, gz:4.8}, rain_city:   {gx:4.0, gz:0.5},
     wind_city:   {gx:7.5, gz:7.5},
   },
-  space: {
-    cosmic_bg:  {gx:4.0, gz:4.0}, solar_wind: {gx:0.5, gz:4.0},
-    pulsar:     {gx:7.2, gz:1.5}, satellite:  {gx:1.0, gz:0.8},
-    meteorite:  {gx:0.8, gz:0.8}, probe:      {gx:7.5, gz:7.5},
-    asteroid:   {gx:6.5, gz:2.5}, ion_cloud:  {gx:3.0, gz:6.5},
-    planet:     {gx:5.5, gz:5.5}, ring_system:{gx:5.5, gz:4.2},
-    black_hole: {gx:1.5, gz:6.5}, quasar:     {gx:7.0, gz:6.0},
-    nebula:     {gx:2.5, gz:3.0}, comet:      {gx:3.5, gz:1.0},
+  forest: {
+    woodpecker:  {gx:2.5, gz:2.0}, owl:        {gx:6.0, gz:2.0},
+    deer:        {gx:4.5, gz:5.0}, crow:       {gx:3.0, gz:1.5},
+    jay:         {gx:5.5, gz:3.0}, squirrel:   {gx:2.0, gz:3.5},
+    wind_canopy: {gx:4.0, gz:0.5}, leaves:     {gx:4.0, gz:4.5},
+    stream:      {gx:7.0, gz:5.5}, fox:        {gx:6.5, gz:6.5},
+    insects:     {gx:3.5, gz:6.0}, treecreeper:{gx:1.5, gz:4.5},
+    woodmice:    {gx:5.0, gz:6.5}, rain_forest:{gx:4.0, gz:4.0},
   },
 };
 
@@ -833,11 +831,11 @@ const MOBILE = {
   car:{speed:0.018,wander:7.5},        tram:{speed:0.008,wander:7.0},
   pigeons:{speed:0.009,wander:3.5},    delivery:{speed:0.007,wander:4.5},
   phone_call:{speed:0.005,wander:3.0}, argument:{speed:0.012,wander:2.5},
-  // space
-  satellite:{speed:0.012,wander:7.0}, meteorite:{speed:0.022,wander:8.0},
-  probe:{speed:0.002,wander:5.0},     comet:{speed:0.005,wander:6.0},
-  ion_cloud:{speed:0.003,wander:4.0}, solar_wind:{speed:0.004,wander:5.0},
-  nebula:{speed:0.001,wander:3.5},    asteroid:{speed:0.002,wander:3.5},
+  // forest
+  deer:{speed:0.004,wander:4.0},      fox:{speed:0.008,wander:5.0},
+  squirrel:{speed:0.010,wander:4.5},  crow:{speed:0.006,wander:5.0},
+  jay:{speed:0.007,wander:3.5},       woodpecker:{speed:0.002,wander:2.5},
+  woodmice:{speed:0.012,wander:3.0},  insects:{speed:0.002,wander:3.0},
 };
 
 // Environment decorations
@@ -859,27 +857,13 @@ const ENV_CITY_BLOCKS = [
   {gx:3.8, gz:5.2, w:1.2, d:1.0, h:1.1},
 ];
 
-// Space: stars scattered across the grid, orbital paths, planet bodies
-const ENV_SPACE_STARS = (() => {
-  // deterministic pseudo-random star field
-  const stars = [];
-  let s = 42;
-  const rand = () => { s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
-  for (let i = 0; i < 55; i++) {
-    stars.push({ gx:rand()*8, gz:rand()*8, r:rand()<0.12?1.4:rand()<0.35?1.0:0.6, brightness:0.4+rand()*0.6, twinkle:0.4+rand()*1.2, phase:rand()*Math.PI*2 });
-  }
-  return stars;
-})();
-
-const ENV_SPACE_ORBITS = [
-  { cx:5.5, cz:5.5, rx:2.0, rz:1.1 },  // planet orbit
-  { cx:5.5, cz:5.5, rx:1.1, rz:0.60 }, // ring inner
-];
-
-const ENV_SPACE_PLANETS = [
-  { gx:5.5, gz:5.5, r:0.55 }, // gas giant
-  { gx:7.2, gz:1.5, r:0.22 }, // pulsar marker
-  { gx:1.5, gz:6.5, r:0.30 }, // black hole accretion
+// Forest: scattered tree canopy positions
+const ENV_FOREST_TREES = [
+  {gx:1.2, gz:1.0, r:0.70}, {gx:2.8, gz:0.8, r:0.55}, {gx:6.5, gz:1.2, r:0.65},
+  {gx:7.2, gz:2.8, r:0.80}, {gx:0.8, gz:3.5, r:0.60}, {gx:1.5, gz:5.5, r:0.50},
+  {gx:3.5, gz:7.2, r:0.70}, {gx:6.2, gz:6.8, r:0.90}, {gx:7.5, gz:5.2, r:0.55},
+  {gx:5.0, gz:1.5, r:0.60}, {gx:0.5, gz:7.0, r:0.65}, {gx:4.8, gz:7.5, r:0.50},
+  {gx:7.8, gz:4.0, r:0.45}, {gx:2.2, gz:6.8, r:0.60}, {gx:6.8, gz:0.4, r:0.55},
 ];
 
 const VIEW = {
@@ -911,7 +895,7 @@ function updatePositions() {
   });
 }
 
-function drawIsoGrid(c, geom, isSpace, isCity) {
+function drawIsoGrid(c, geom, isForest, isCity) {
   const { tw, th, ox, oy } = geom; const N=GRID_N;
   const top=isoP(0,0,ox,oy,tw,th), right=isoP(N,0,ox,oy,tw,th);
   const bot=isoP(N,N,ox,oy,tw,th), left =isoP(0,N,ox,oy,tw,th);
@@ -920,10 +904,10 @@ function drawIsoGrid(c, geom, isSpace, isCity) {
   c.moveTo(top.sx,top.sy); c.lineTo(right.sx,right.sy);
   c.lineTo(bot.sx,bot.sy); c.lineTo(left.sx,left.sy);
   c.closePath();
-  c.fillStyle = isSpace ? 'rgba(8,8,14,0.72)' : isCity ? 'rgba(14,13,10,0.65)' : 'rgba(14,14,10,0.60)';
+  c.fillStyle = isForest ? 'rgba(8,12,6,0.68)' : isCity ? 'rgba(14,13,10,0.65)' : 'rgba(14,14,10,0.60)';
   c.fill();
 
-  c.strokeStyle = isSpace ? 'rgba(60,60,100,0.38)' : isCity ? 'rgba(90,82,68,0.42)' : 'rgba(88,88,74,0.48)';
+  c.strokeStyle = isForest ? 'rgba(50,65,35,0.38)' : isCity ? 'rgba(90,82,68,0.42)' : 'rgba(88,88,74,0.48)';
   c.lineWidth=0.6;
   for (let i=0;i<=N;i++) {
     const a=isoP(i,0,ox,oy,tw,th),b=isoP(i,N,ox,oy,tw,th);
@@ -932,7 +916,7 @@ function drawIsoGrid(c, geom, isSpace, isCity) {
     c.beginPath(); c.moveTo(d.sx,d.sy); c.lineTo(e.sx,e.sy); c.stroke();
   }
 
-  c.strokeStyle = isSpace ? 'rgba(80,80,140,0.65)' : isCity ? 'rgba(112,102,84,0.72)' : 'rgba(108,108,90,0.75)';
+  c.strokeStyle = isForest ? 'rgba(65,85,45,0.65)' : isCity ? 'rgba(112,102,84,0.72)' : 'rgba(108,108,90,0.75)';
   c.lineWidth=1;
   c.beginPath();
   c.moveTo(top.sx,top.sy); c.lineTo(right.sx,right.sy);
@@ -984,58 +968,24 @@ function drawEnvCity(c, geom) {
   });
 }
 
-function drawEnvSpace(c, geom) {
+function drawEnvForest(c, geom) {
   const { tw, th, ox, oy }=geom;
-
-  // Background stars — blink gently
-  ENV_SPACE_STARS.forEach(s => {
-    const {sx,sy}=isoP(s.gx,s.gz,ox,oy,tw,th);
-    const twinkle=Math.sin(VIEW.t*s.twinkle+s.phase)*0.3+0.7;
-    const a=s.brightness*twinkle*0.7;
-    c.fillStyle=`rgba(200,200,220,${a})`;
-    const sr=s.r*0.7;
-    c.fillRect(Math.round(sx-sr*0.5),Math.round(sy-sr*0.5),Math.ceil(sr),Math.ceil(sr));
-  });
-
-  // Orbital paths as iso-space ellipses (sampled)
-  ENV_SPACE_ORBITS.forEach((orb,oi) => {
+  ENV_FOREST_TREES.forEach(t => {
+    const {sx,sy}=isoP(t.gx,t.gz,ox,oy,tw,th);
+    const r=t.r*tw*0.32;
+    const sway=Math.sin(VIEW.t*0.38+t.gx*1.3)*0.05;
+    // trunk
     c.beginPath();
-    for (let i=0;i<=72;i++) {
-      const angle=(i/72)*Math.PI*2;
-      const gx=orb.cx+Math.cos(angle)*orb.rx;
-      const gz=orb.cz+Math.sin(angle)*orb.rz;
-      const {sx,sy}=isoP(gx,gz,ox,oy,tw,th);
-      i===0?c.moveTo(sx,sy):c.lineTo(sx,sy);
-    }
-    c.closePath();
-    c.strokeStyle=oi===0?'rgba(70,70,120,0.28)':'rgba(80,80,140,0.20)';
-    c.lineWidth=0.6; c.stroke();
+    c.moveTo(sx, sy);
+    c.lineTo(sx, sy-r*0.9);
+    c.strokeStyle='rgba(60,50,32,0.42)'; c.lineWidth=0.8; c.stroke();
+    // canopy
+    c.beginPath();
+    c.ellipse(sx, sy-r*0.85, r*0.88, r*0.34, 0, 0, Math.PI*2);
+    c.fillStyle=`rgba(48,60,34,${0.28+sway})`;
+    c.fill();
+    c.strokeStyle='rgba(65,80,45,0.32)'; c.lineWidth=0.5; c.stroke();
   });
-
-  // Planet bodies
-  ENV_SPACE_PLANETS.forEach((p,pi) => {
-    const {sx,sy}=isoP(p.gx,p.gz,ox,oy,tw,th);
-    const r=p.r*tw*0.22;
-    // pulsing glow for black hole
-    const glowR = pi===2 ? r*(1+Math.sin(VIEW.t*0.8)*0.15) : r;
-    c.beginPath(); c.ellipse(sx,sy,glowR,glowR*0.45,0,0,Math.PI*2);
-    const colors=['rgba(80,75,130,0.55)','rgba(100,95,80,0.50)','rgba(20,20,40,0.80)'];
-    c.strokeStyle=colors[pi]; c.lineWidth=pi===2?1.2:0.9; c.stroke();
-    // ring system hint around planet
-    if (pi===0) {
-      c.beginPath(); c.ellipse(sx,sy,glowR*1.8,glowR*0.55,0,0,Math.PI*2);
-      c.strokeStyle='rgba(80,75,130,0.25)'; c.lineWidth=0.5; c.stroke();
-    }
-  });
-
-  // Pulsar tick — tiny flash at fixed interval
-  const pulsarPos=AGENT_POS.space.pulsar;
-  const {sx:psx,sy:psy}=isoP(pulsarPos.gx,pulsarPos.gz,ox,oy,tw,th);
-  const pTick=Math.sin(VIEW.t*4.7); // ~1.34s period at 60fps
-  if (pTick>0.96) {
-    c.beginPath(); c.arc(psx,psy,tw*0.12,0,Math.PI*2);
-    c.fillStyle=`rgba(180,220,255,${(pTick-0.96)*25})`; c.fill();
-  }
 }
 
 function drawViz() {
@@ -1045,12 +995,12 @@ function drawViz() {
   c.clearRect(0,0,cw,ch); VIEW.t+=0.016;
   updatePositions();
   const geom=tileGeom(cw,ch);
-  const isSpace=S.world==='space';
+  const isForest=S.world==='forest';
   const isCity=S.world==='city';
-  drawIsoGrid(c,geom,isSpace,isCity);
+  drawIsoGrid(c,geom,isForest,isCity);
   if (S.world==='water')  drawEnvWater(c,geom);
   if (S.world==='city')   drawEnvCity(c,geom);
-  if (S.world==='space')  drawEnvSpace(c,geom);
+  if (S.world==='forest') drawEnvForest(c,geom);
 
   const now=Date.now();
   WORLDS[S.world].agents.forEach(a => {
@@ -1067,16 +1017,16 @@ function drawViz() {
     if (pulsed) {
       const t=age/2800, r=dot+t*geom.tw*0.55;
       c.beginPath(); c.ellipse(sx,sy,Math.max(0.5,r),Math.max(0.5,r*0.38),0,0,Math.PI*2);
-      c.strokeStyle=isSpace?`rgba(160,180,255,${(1-t)*0.55})`:isCity?`rgba(220,190,130,${(1-t)*0.55})`:`rgba(196,196,170,${(1-t)*0.55})`;
+      c.strokeStyle=isForest?`rgba(140,190,100,${(1-t)*0.55})`:isCity?`rgba(220,190,130,${(1-t)*0.55})`:`rgba(196,196,170,${(1-t)*0.55})`;
       c.lineWidth=0.8; c.stroke();
-      c.fillStyle=isSpace?`rgba(200,220,255,${0.65+(1-t)*0.35})`:isCity?`rgba(240,210,150,${0.65+(1-t)*0.35})`:`rgba(228,228,204,${0.65+(1-t)*0.35})`;
+      c.fillStyle=isForest?`rgba(170,220,120,${0.65+(1-t)*0.35})`:isCity?`rgba(240,210,150,${0.65+(1-t)*0.35})`:`rgba(228,228,204,${0.65+(1-t)*0.35})`;
     } else if (involved) {
       const t2=secAge/3200;
-      c.fillStyle=isSpace?`rgba(140,160,220,${0.7-t2*0.3})`:isCity?`rgba(200,165,100,${0.7-t2*0.3})`:`rgba(180,160,130,${0.7-t2*0.3})`;
+      c.fillStyle=isForest?`rgba(120,170,80,${0.7-t2*0.3})`:isCity?`rgba(200,165,100,${0.7-t2*0.3})`:`rgba(180,160,130,${0.7-t2*0.3})`;
     } else if (warm) {
-      c.fillStyle=isSpace?'rgba(120,130,180,0.75)':isCity?'rgba(148,128,90,0.80)':'rgba(138,138,118,0.80)';
+      c.fillStyle=isForest?'rgba(100,140,70,0.75)':isCity?'rgba(148,128,90,0.80)':'rgba(138,138,118,0.80)';
     } else {
-      c.fillStyle=isSpace?'rgba(55,55,90,0.65)':isCity?'rgba(80,70,50,0.65)':'rgba(78,78,64,0.65)';
+      c.fillStyle=isForest?'rgba(45,65,30,0.65)':isCity?'rgba(80,70,50,0.65)':'rgba(78,78,64,0.65)';
     }
 
     c.fillRect(Math.round(sx-dot*0.5),Math.round(sy-dot*0.5),Math.ceil(dot),Math.ceil(dot));
@@ -1087,7 +1037,7 @@ function drawViz() {
       const dx=tgt.gx-curPos.gx, dz=tgt.gz-curPos.gz, speed=Math.sqrt(dx*dx+dz*dz);
       if (speed>0.3&&!pulsed) {
         const tp=isoP(curPos.gx-(dx/speed)*0.3, curPos.gz-(dz/speed)*0.3, geom.ox,geom.oy,geom.tw,geom.th);
-        c.fillStyle=isSpace?'rgba(55,55,90,0.25)':isCity?'rgba(80,70,48,0.28)':'rgba(70,70,58,0.28)';
+        c.fillStyle=isForest?'rgba(40,60,25,0.25)':isCity?'rgba(80,70,48,0.28)':'rgba(70,70,58,0.28)';
         c.fillRect(Math.round(tp.sx-dot*0.4),Math.round(tp.sy-dot*0.4),Math.ceil(dot*0.8),Math.ceil(dot*0.8));
       }
     }

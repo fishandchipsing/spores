@@ -202,7 +202,7 @@ html, body {
     <div id="world-tabs">
       <button class="wtab active" data-world="water">water</button>
       <button class="wtab" data-world="city">city</button>
-      <button class="wtab" data-world="space">space</button>
+      <button class="wtab" data-world="forest">forest</button>
     </div>
   </div>
   <div id="hdr-right">
@@ -392,35 +392,33 @@ When two agents directly interact, generate "conflict" type: cyclist vs pedestri
 RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind only in matching weather. Tram more frequent at rush hour. Night makes single sounds more prominent. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
   },
 
-  space: {
-    label:'space', weathers:['solar minimum','solar flare','geomagnetic storm','deep silence','ion storm','coronal mass ejection'],
-    times:['orbital night','transit','aphelion','perihelion','eclipse','deep field'],
-    ambient:{ noiseColor:'pink', rumble:{freq:28,gain:8}, shimmer:{freq:3400,q:0.15,gain:0.016}, lfo:{rate:0.018,depth:0.28} },
+  forest: {
+    label:'forest', weathers:['dry still','overcast','light rain','heavy rain','after rain','frost'],
+    times:['pre-dawn','dawn chorus','morning','midday','afternoon','dusk','night'],
+    ambient:{ noiseColor:'brown', rumble:{freq:90,gain:0.04}, shimmer:{freq:1800,q:0.5,gain:0.012}, lfo:{rate:0.05,depth:0.22} },
     agents:[
-      {id:'cosmic_bg',   label:'cosmic background',desc:'the 2.7K hum of the universe — omnidirectional, unchanging, barely audible but always present', state:'constant, isotropic'},
-      {id:'solar_wind',  label:'solar wind',       desc:'a sibilant rush of charged particles from the star — varies with solar activity, surges or thins', state:'steady flux'},
-      {id:'pulsar',      label:'pulsar',           desc:'a neutron star rotating — precise electromagnetic pulse on a fixed interval, slightly phase-drifting over epochs', state:'pulsing, 1.34s period'},
-      {id:'satellite',   label:'satellite',        desc:'a faint telemetry tone sweeping past in low orbit — Doppler shift as it approaches and recedes, then silence', state:'below horizon'},
-      {id:'meteorite',   label:'meteorite',        desc:'entry flash — a high-pitched streak through the upper atmosphere becoming low-frequency entry rumble', state:'absent'},
-      {id:'probe',       label:'deep probe',       desc:'ancient transmission from a probe beyond the heliosphere — data burst, then vast static, then silence', state:'no signal received'},
-      {id:'asteroid',    label:'asteroid belt',    desc:'distant grinding and slow displacement — rock on rock, collision resonance, the weight of accumulated time', state:'distant resonance'},
-      {id:'ion_cloud',   label:'ion cloud',        desc:'electromagnetic interference — radio signals fragment and crackle, then clear. Thickens as cloud drifts through', state:'dispersed, distant'},
-      {id:'planet',      label:'planet',           desc:'magnetosphere of a gas giant — a massive slow oscillation, 40-second cycle, sub-bass resonance felt more than heard', state:'inhaling'},
-      {id:'ring_system', label:'ring system',      desc:'ice particles and rock in orbit — a continuous crystalline high hiss, very fine, structure audible within it', state:'steady circulation'},
-      {id:'black_hole',  label:'black hole',       desc:'gravitational bass at the edge of detection — everything slightly bends toward it, distorts nearby signal frequency', state:'distant, felt not heard'},
-      {id:'quasar',      label:'quasar',           desc:'a periodic jet of energy from a distant galactic core — a burst of high-frequency signal repeating over vast intervals', state:'between bursts'},
-      {id:'nebula',      label:'nebula',           desc:'electromagnetic drift through an ionised dust cloud — a low staticky rustle, gradual and vast, signals scatter through it', state:'drifting through edge'},
-      {id:'comet',       label:'comet tail',       desc:'sublimating ice vapor streaming behind — a faint high-frequency hiss that sweeps in the direction of travel', state:'approaching perihelion'},
+      {id:'woodpecker',  label:'woodpecker',  desc:'drums hard against dead wood in short bursts, stops abruptly, listens, drums again — territorial against any answering tap', state:'drumming high up'},
+      {id:'owl',         label:'owl',         desc:'nocturnal — territorial hoot carries far through still air, silent flight, hunts only at dusk and night. Daytime: completely silent', state:'roosting, silent'},
+      {id:'deer',        label:'deer',        desc:'slow deliberate footsteps on leaf litter, one snapping twig, full freeze at any sudden disturbance', state:'moving through understory'},
+      {id:'crow',        label:'crow',        desc:'harsh cawing from upper canopy, mob behaviour when a predator is spotted — alarm spreads tree to tree', state:'perched in high canopy'},
+      {id:'jay',         label:'jay',         desc:'loud screeching alarm, mimics buzzard when nervous, betrays the deer\'s position — explosive and unreliable', state:'watching from oak'},
+      {id:'squirrel',    label:'squirrel',    desc:'chattering scolding call, leaping between branches shakes the whole canopy, acorn dropped hard to ground', state:'foraging in upper branches'},
+      {id:'wind_canopy', label:'wind',        desc:'arrives in the high canopy first — a slow roar above before it reaches the forest floor, bends the crowns in waves', state:'still'},
+      {id:'leaves',      label:'leaves',      desc:'dry leaf litter announces every footstep. Rain hits the canopy in layers: high crown first, then midlayer, then the floor', state:'dry and deep'},
+      {id:'stream',      label:'stream',      desc:'distant water over stones, rises after rain. Muffled by trees, heard only in gaps of silence', state:'low trickle, far off'},
+      {id:'fox',         label:'fox',         desc:'usually silent — a soft careful footstep on dry leaves, or at night a single sharp bark that cuts through everything', state:'elsewhere'},
+      {id:'insects',     label:'insects',     desc:'summer hum of flies and bees in warm light patches. Disappears completely in cold, rain, or after dark', state:'faint in a clearing'},
+      {id:'treecreeper', label:'treecreeper', desc:'thin high-pitched call, spirals up bark probing for insects, almost inaudible from more than a few metres', state:'on oak trunk nearby'},
+      {id:'woodmice',    label:'woodmice',    desc:'tiny scurrying in dry leaves, disturbs the litter without warning, gone before it fully registers', state:'hidden below roots'},
+      {id:'rain_forest', label:'rain',        desc:'hits the high canopy first — a distant roar, then arrives in layers below. Drips from leaves long after it stops. Changes everything', state:'absent'},
     ],
-    systemPrompt:`You are a world engine translating electromagnetic and gravitational events of deep space into sound. Nothing here is natural sound — everything is translated: electromagnetic waves as tone, gravity as bass, particle streams as noise, distance as silence. The listener is a sensor array, not a human ear.
+    systemPrompt:`You are a world engine for a living broadleaf forest. Sound events emerge from what agents are DOING and how they interact across layers — canopy, understory, forest floor.
 
-Agents affect each other: Solar flare amplifies ion cloud interference, which fragments satellite telemetry. Pulsar rhythm becomes confused near black hole gravity well. Meteorite entry disrupts ring system resonance. Ion storm overwhelms cosmic background. Probe signal passes through nebula dust and arrives fragmented and phase-shifted. Planet breath cycle creates tidal pull on nearby signal paths. Comet tail hiss intensifies as it approaches perihelion. Quasar jet briefly illuminates ion cloud edges.
+Agents interact: Jay alarm call reveals the deer. Woodpecker drumming interrupted by wind moving the tree. Crow mobbing drives fox through the understory — deer hears and freezes. Stream rises audibly after rain. Squirrel dropping acorn startles woodmice below. Owl is silent in daylight — only calls at dusk and night. Wind moves canopy before it reaches the floor — two arrivals. Rain hits canopy first then floor — two separate sound events. Insects disappear in cold or rain. Leaves are the floor — every footstep and drip lands there.
 
-The environment is vast, cold, mostly silent. Events are rare and significant. When multiple signals interact, the interference pattern itself is the event.
+When two agents directly interact, generate "conflict" type: crow mobbing owl at its roost, jay betraying deer to fox, two squirrels chasing along a branch.
 
-When two agents interact or collide electromagnetically, generate "conflict" type: pulsar phase-locked to planet resonance, ion cloud absorbing satellite signal, meteorite fragmenting ring system structure.
-
-RULES: 1 sentence — only what is sensed/translated. Evolve agent states. Use vast scale. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain and frost only in matching weather. Owl only at dusk or night. Insects only in warm daylight. Let the forest have long silences — the quiet is part of it. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
   },
 };
 
@@ -439,7 +437,7 @@ const S = {
 const MELODY_CFG = {
   water: { freqs:[261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.26,783.99,880.00], wave:'sine',    vol:0.075, atk:0.6, hold:0.25, rel:2.8, beatMult:0.5 },
   city:  { freqs:[110.00,123.47,130.81,146.83,164.81,174.61,196.00,220.00,246.94,261.63], wave:'triangle',vol:0.060, atk:0.3, hold:0.20, rel:1.8, beatMult:0.25 },
-  space: { freqs:[32.70,36.71,41.20,48.99,55.00,65.41,82.41,110.00],                      wave:'sine',    vol:0.085, atk:2.5, hold:1.20, rel:5.5, beatMult:2.0 },
+  forest:{ freqs:[174.61,196.00,220.00,261.63,293.66,349.23,392.00,440.00,523.25,587.33],  wave:'sine',    vol:0.065, atk:0.8, hold:0.30, rel:3.2, beatMult:0.75 },
 };
 const beatMs = () => 60000 / S.bpm;
 
