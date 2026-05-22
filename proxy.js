@@ -160,7 +160,9 @@ const server = http.createServer((req, res) => {
           const audio = Buffer.concat(chunks);
 
           if (proxyRes.statusCode === 200) {
-            const filename = `${world}-${Date.now()}.mp3`;
+            const slug = (parsed.text || '').toLowerCase()
+              .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 48);
+            const filename = `${world}-${slug}-${Date.now()}.mp3`;
             fs.writeFile(path.join(CACHE_DIR, filename), audio, err => {
               if (err) console.error('cache write error:', err.message);
               else     console.log(`  cached ${filename}`);

@@ -425,6 +425,7 @@
   }
   .se-kind.live  { background: #18221a; color: #80b870; }
   .se-kind.ghost { background: #1a1820; color: #8070a8; }
+  .se-kind.shake { background: #221818; color: #b07050; }
   .se-dir { color: var(--p-dim); flex-shrink: 0; }
   .se-text {
     color: var(--p-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -719,6 +720,11 @@ const S = {
   nextAt:null, nextTimeout:null, cdInterval:null,
   density: 1,
   weatherTimeout: null,
+  arc: {
+    title:'', logline:'', beats:[], beatIdx:0, beatEvents:0,
+    epochIdx:0, prevTitle:'', prevLogline:'',
+    generating:false, ready:false, epochTimer:null,
+  },
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -931,8 +937,7 @@ async function ghostPlay() {
     gain.gain.setTargetAtTime(0, now+dur-1.5, 1.0);
     src.start(); src.stop(now+dur+0.5);
     debugLine('ghost', file);
-    // Log to panel sounds list — show the filename (strip world prefix + timestamp)
-    const label = file.replace(/^[^-]+-\d+-?/, '').replace(/\.mp3$/, '') || file.replace(/\.mp3$/, '');
+    // Log to panel — strip world prefix and timestamp, convert underscores to spaces
     addSoundEntry(file, null, 'ghost');
   } catch(e) {}
 }
@@ -1644,7 +1649,36 @@ Respond ONLY with valid JSON:
     S.arc.beatIdx = 0; S.arc.beatEvents = 0;
   }
   S.arc.generating = false; S.arc.ready = true;
+  applyArcBeatMood(); // prime VIBE for beat 0 (setup)
   updatePanelArc();
+}
+
+// Arc beat moods: indexed 0-4 (setup → development → peak → resolution → residue)
+// Values are VIBE targets pushed toward when a beat advances
+const ARC_BEAT_MOODS = [
+  { activity:0.18, tension:0.12, register:0.35 }, // 0 setup    — still, anticipatory
+  { activity:0.42, tension:0.38, register:0.55 }, // 1 development — building
+  { activity:0.78, tension:0.72, register:0.80 }, // 2 peak      — intense, bright
+  { activity:0.38, tension:0.22, register:0.48 }, // 3 resolution — settling
+  { activity:0.12, tension:0.07, register:0.28 }, // 4 residue   — quiet, dark
+];
+
+function applyArcBeatMood() {
+  if (!S.arc.ready) return;
+  const beats = S.arc.beats.length || 5;
+  // normalize beatIdx to 0-4 range regardless of how many beats exist
+  const moodIdx = Math.min(4, Math.round(S.arc.beatIdx / Math.max(beats - 1, 1) * 4));
+  const mood = ARC_BEAT_MOODS[moodIdx];
+  if (!mood) return;
+  // Push VIBE partway toward the arc mood — don't override event-driven state entirely
+  const blend = 0.35;
+  VIBE.activity = VIBE.activity + (mood.activity - VIBE.activity) * blend;
+  VIBE.tension  = VIBE.tension  + (mood.tension  - VIBE.tension)  * blend;
+  VIBE.register = VIBE.register + (mood.register - VIBE.register) * blend;
+  // Pad tone shifts over 3s to reflect new beat mood
+  updatePadTone(3.0);
+  // Melody register will adjust naturally via VIBE.register on next phrase
+  debugLine('arc', `beat ${S.arc.beatIdx} → mood ${moodIdx} (t=${mood.tension.toFixed(2)})`);
 }
 
 function advanceBeat() {
@@ -1652,6 +1686,7 @@ function advanceBeat() {
   if (S.arc.beatIdx < S.arc.beats.length - 1) {
     S.arc.beatIdx++;
     S.arc.beatEvents = 0;
+    applyArcBeatMood();
     updatePanelArc();
   }
 }
@@ -2279,13 +2314,52 @@ document.getElementById('shake-btn').addEventListener('click', () => {
   // 3. Immediate pad note — the shake colours the harmony
   playPad(S.world);
 
-  // 4. Reactive melody burst — conflict level
-  playReact({ type: 'conflict' });
+  // 4. Reactive melody burst — conflict level (guaranteed, no 45% skip)
+  const m = MELODY_CFG[S.world];
+  if (m && ctx && masterGain) {
+    const fl = m.freqs.length;
+    const center = Math.round(VIBE.register * (fl - 1));
+    const numNotes = 2 + Math.floor(Math.random() * 2);
+    let idx = Math.max(0, Math.min(fl - 1, center + Math.round((Math.random() - 0.5) * 2)));
+    for (let i = 0; i < numNotes; i++) {
+      const freq = m.freqs[Math.max(0, Math.min(fl - 1, idx))];
+      const delay = i * (280 + Math.random() * 120);
+      const rel = (i === numNotes - 1) ? (m.relLong ?? 2.5) : (m.relShort ?? 0.4);
+      setTimeout(() => { if (S.running) playNote(S.world, freq, rel); }, delay);
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      idx = Math.max(0, Math.min(fl - 1, idx + dir * (1 + Math.floor(Math.random() * 2))));
+    }
+  }
 
   // 5. VIBE jolt + instant pad brightness spike
   VIBE.activity = Math.min(1, VIBE.activity + 0.4);
   VIBE.tension  = Math.min(1, VIBE.tension  + 0.35);
   updatePadTone(0.4);
+
+  // 6. Play a random cached sound from current world — less muffled than ghost layer
+  if (GHOST.files.length > 0 && ctx) {
+    const file = GHOST.files[Math.floor(Math.random() * GHOST.files.length)];
+    fetch(`/sfx-cache/${encodeURIComponent(file)}`)
+      .then(r => r.ok ? r.arrayBuffer() : null)
+      .then(ab => ab ? ctx.decodeAudioData(ab) : null)
+      .then(buf => {
+        if (!buf || !S.running) return;
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const lpf = ctx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=900+Math.random()*500; lpf.Q.value=0.5;
+        const pan = ctx.createStereoPanner(); pan.pan.value=(Math.random()-0.5)*0.9;
+        const gain = ctx.createGain(); gain.gain.value=0;
+        src.connect(lpf); lpf.connect(pan); pan.connect(gain);
+        gain.connect(sfxGain||masterGain||ctx.destination);
+        const now = ctx.currentTime;
+        gain.gain.setTargetAtTime(0.62, now, 0.08);
+        gain.gain.setTargetAtTime(0, now + buf.duration - 1.0, 0.8);
+        src.start(); src.stop(now + buf.duration + 0.2);
+        // Show label from filename
+        const slug = file.replace(/^[^-]+-/, '').replace(/-\d+\.mp3$/, '').replace(/_/g, ' ');
+        showSFXLabel(slug || file, 'all around');
+        addSoundEntry(file, 'all around', 'shake');
+      }).catch(() => {});
+  }
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -2412,13 +2486,20 @@ function escHtml(str) {
 // ── Sound entries ──────────────────────────────────────────
 const DIR_ARROW = { left:'←', right:'→', ahead:'↑', behind:'↓', above:'↑', 'all around':'·' };
 
+function filenameToLabel(f) {
+  // New format: world-slug-timestamp.mp3  e.g. water-heron_strikes_at_fish-1716400000000.mp3
+  // Remove world prefix, remove trailing -timestamp, convert underscores to spaces
+  return f.replace(/^[^-]+-/, '').replace(/-\d{10,}\.mp3$/, '').replace(/\.mp3$/, '').replace(/_/g, ' ');
+}
+
 function addSoundEntry(text, direction, kind) {
   const list = document.getElementById('ps-list');
   if (!list) return;
 
   const time = new Date().toTimeString().slice(0, 5);
   const arrow = direction ? (DIR_ARROW[direction] ?? '·') : '↩';
-  const isFilename = kind === 'ghost';
+  const isFilename = kind === 'ghost' || kind === 'shake';
+  const label = isFilename ? filenameToLabel(text) : text;
 
   const entry = document.createElement('div');
   entry.className = 'sound-entry';
@@ -2426,7 +2507,7 @@ function addSoundEntry(text, direction, kind) {
     `<span class="se-time">${time}</span>` +
     `<span class="se-kind ${kind}">${kind}</span>` +
     `<span class="se-dir">${arrow}</span>` +
-    `<span class="se-text${isFilename ? ' filename' : ''}">${escHtml(text)}</span>`;
+    `<span class="se-text">${escHtml(label)}</span>`;
   list.prepend(entry);
 
   // Fade older entries, prune beyond 12
