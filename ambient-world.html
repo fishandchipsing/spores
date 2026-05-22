@@ -1208,6 +1208,42 @@ function playAnticipatory() {
   }
 }
 
+// Event-triggered burst — always 2-4 notes with clear pitch movement
+function playEventBurst(delayMs, evType) {
+  setTimeout(() => {
+    if (!S.running || !ctx || !masterGain) return;
+    const m = MELODY_CFG[S.world]; if (!m) return;
+    const fl = m.freqs.length;
+    const center = Math.round(VIBE.register * (fl - 1));
+    // Number of notes: conflict/interaction = 3-4, others = 2-3
+    const intense = evType === 'conflict' || evType === 'interaction';
+    const count = intense ? 3 + (Math.random() < 0.5 ? 1 : 0)
+                          : 2 + (Math.random() < 0.4 ? 1 : 0);
+    // Step size: larger for intense events
+    const maxStep = intense ? 3 : 2;
+    // Beat spacing: tight for conflict, spacious for residue/shift
+    const beat = evType === 'conflict'  ? 260 + Math.random() * 120 :
+                 evType === 'residue'   ? 600 + Math.random() * 300 :
+                 evType === 'shift'     ? 500 + Math.random() * 250 :
+                                         380 + Math.random() * 180;
+    let idx = Math.max(0, Math.min(fl - 1, center + Math.round((Math.random() - 0.5) * 2)));
+    let t = 0;
+    for (let i = 0; i < count; i++) {
+      const freq = m.freqs[Math.max(0, Math.min(fl - 1, idx))];
+      const isLast = i === count - 1;
+      const rel = isLast ? (m.relLong ?? 3.0) * (0.7 + Math.random() * 0.4)
+                         : (m.relShort ?? 0.5) * (0.9 + Math.random() * 0.3);
+      const noteT = t;
+      setTimeout(() => { if (S.running) playNote(S.world, freq, rel); }, noteT);
+      // Walk scale with direction bias — mostly stepwise, occasional skip
+      const dir = Math.random() < 0.55 ? 1 : -1;
+      const step = 1 + (Math.random() < 0.35 ? Math.floor(Math.random() * (maxStep - 1)) + 1 : 0);
+      idx = Math.max(0, Math.min(fl - 1, idx + dir * step));
+      t += beat;
+    }
+  }, delayMs);
+}
+
 // Event-triggered phrase — resets melody timer so the phrase feels like a response
 function playEventPhrase(delayMs) {
   clearTimeout(melodyTimer);
@@ -1474,14 +1510,14 @@ async function fireEvent(){
     }
     updateVibe(ev);
     playReact(ev);
-    // Every event triggers a phrase — timing shaped by type
-    const _phDelay = ev.type==='conflict'    ?  400+Math.random()*400  :
-                     ev.type==='interaction' ?  700+Math.random()*800  :
-                     ev.type==='shift'       ? 1500+Math.random()*2000 :
-                     ev.type==='residue'     ? 2500+Math.random()*1500 :
-                     ev.type==='moment'      ?  800+Math.random()*1200 :
-                                               1000+Math.random()*1500;
-    playEventPhrase(_phDelay);
+    // Every event triggers a melodic burst — timing shaped by type
+    const _phDelay = ev.type==='conflict'    ?  300+Math.random()*300  :
+                     ev.type==='interaction' ?  500+Math.random()*600  :
+                     ev.type==='shift'       ? 1200+Math.random()*1500 :
+                     ev.type==='residue'     ? 2000+Math.random()*1500 :
+                     ev.type==='moment'      ?  600+Math.random()*900  :
+                                               700+Math.random()*1000;
+    playEventBurst(_phDelay, ev.type);
     flashAgent(ev.agent, ev.agent_updates);
     updateClock();
     addPanelEntry(rawPrompt, rawResponse, ev);
