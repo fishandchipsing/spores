@@ -371,6 +371,36 @@
   .pl-detail::-webkit-scrollbar { width: 2px; }
   .pl-detail::-webkit-scrollbar-thumb { background: var(--p-dim); }
 
+
+  /* arc panel */
+  .arc-epoch-label { font-size:8px; color:var(--p-dim); letter-spacing:0.06em; }
+  .arc-title {
+    font-size:11px; color:var(--p-bright); letter-spacing:0.02em;
+    margin-bottom:5px; line-height:1.4;
+  }
+  .arc-title.generating { color:var(--p-dim); font-style:italic; }
+  .arc-logline {
+    font-size:9px; color:var(--p-mid); font-style:italic;
+    line-height:1.55; margin-bottom:9px;
+  }
+  .arc-dots { display:flex; gap:5px; align-items:center; margin-bottom:6px; }
+  .arc-dot {
+    width:6px; height:6px; border-radius:50%; flex-shrink:0;
+    background:var(--p-sep); transition:background 0.4s;
+  }
+  .arc-dot.done   { background:var(--p-mid); }
+  .arc-dot.active { background:var(--p-bright); box-shadow:0 0 4px var(--p-bright); }
+  .arc-beat-desc {
+    font-size:8.5px; color:var(--p-text); line-height:1.55;
+    padding-left:2px;
+  }
+  .arc-epoch-progress {
+    margin-top:8px; height:2px; background:var(--p-sep); border-radius:1px; overflow:hidden;
+  }
+  .arc-epoch-bar {
+    height:100%; background:var(--p-dim); border-radius:1px;
+    width:0%; transition:width 0.8s linear;
+  }
   /* sounds list */
   #panel-sounds { max-height: 170px; overflow-y: auto; }
   #panel-sounds::-webkit-scrollbar { width: 2px; }
@@ -508,7 +538,19 @@
     <div class="panel-kv"><span class="panel-k">events</span><span class="panel-v" id="ps-events">0</span></div>
   </div>
 
-  <div class="panel-section">
+  <div class="panel-section" id="panel-arc">
+    <div class="ps-head-row">
+      <div class="panel-head" style="margin-bottom:0">arc</div>
+      <span class="arc-epoch-label" id="pa-epoch">—</span>
+    </div>
+    <div id="pa-title" class="arc-title generating">waiting to start</div>
+    <div id="pa-logline" class="arc-logline"></div>
+    <div class="arc-dots" id="pa-dots"></div>
+    <div class="arc-beat-desc" id="pa-beat-desc"></div>
+    <div class="arc-epoch-progress"><div class="arc-epoch-bar" id="pa-epoch-bar"></div></div>
+  </div>
+
+    <div class="panel-section">
     <div class="panel-head">vibe</div>
     <div class="vibe-row">
       <span class="vk">activity</span>
@@ -1334,6 +1376,11 @@ ${recentBlock}
 
 CLOSE PAIRS right now (consider interaction or conflict):
 ${buildProximityNote()}
+${S.arc.ready ? `
+STORY ARC: "${S.arc.title}"
+"${S.arc.logline}"
+BEAT ${S.arc.beatIdx + 1} of ${S.arc.beats.length}: ${S.arc.beats[S.arc.beatIdx] || ''}
+Events on this beat: ${S.arc.beatEvents} — set advance_beat true when this beat feels complete (min 2 events).` : ''}
 
 Respond ONLY with valid JSON, no markdown:
 {
@@ -1346,10 +1393,12 @@ Respond ONLY with valid JSON, no markdown:
     { "prompt": "second sound, max 10 words", "delay": 1200, "vol": 0.42 },
     { "prompt": "third sound, max 10 words",  "delay": 2800, "vol": 0.28 }
   ],
-  "agent_updates": { "agent_id": "new state" }
+  "agent_updates": { "agent_id": "new state" },
+  "advance_beat": false
 }
 
-sounds: 1 required, 2 and 3 optional. Spread sounds across 0–4 seconds. No sound should be loud or sharp — think layers heard through space. First is the main event (vol ~0.70), second arrives later as context or echo (vol ~0.40), third is a distant residue or environmental bleed (vol ~0.25). Together they fill the gap between events.`;
+sounds: 1 required, 2 and 3 optional. Spread sounds across 0–4 seconds. No sound should be loud or sharp — think layers heard through space. First is the main event (vol ~0.70), second arrives later as context or echo (vol ~0.40), third is a distant residue or environmental bleed (vol ~0.25). Together they fill the gap between events.
+advance_beat: set true only when the current arc beat has resolved and the story is ready to move to the next beat.`;
 
   const res = await fetch('/claude', {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -1389,6 +1438,12 @@ async function fireEvent(){
     addEventRow(ev);
     S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
     S.eventCount++; tickPhase();
+    // Arc beat tracking
+    if (S.arc.ready) {
+      S.arc.beatEvents++;
+      if (ev.advance_beat && S.arc.beatEvents >= 2) advanceBeat();
+      else if (S.arc.beatEvents >= 6) advanceBeat(); // safety auto-advance
+    }
     updateVibe(ev);
     playReact(ev);
     flashAgent(ev.agent, ev.agent_updates);
@@ -1396,6 +1451,7 @@ async function fireEvent(){
     addPanelEntry(rawPrompt, rawResponse, ev);
     updatePanelAgents();
     updatePanelState();
+    updatePanelArc();
     if(ev.sounds) playSounds(ev.sounds, ev.direction);
     else if(ev.sound_prompt) playSFX(ev.sound_prompt, ev.direction).catch(()=>{});
   } catch(e){ console.warn('event failed:',e); setStatus('retry…'); }
@@ -1489,9 +1545,17 @@ function buildAgentStrip(){
 function initWorld(w){
   S.world=w; S.recentEvents=[]; S.eventCount=0; phaseIdx=0; phaseEvts=0;
   clearTimeout(S.weatherTimeout);
+  clearTimeout(S.arc.epochTimer); clearInterval(_epochBarInterval);
+  // Reset arc state
+  S.arc.title=''; S.arc.logline=''; S.arc.beats=[];
+  S.arc.beatIdx=0; S.arc.beatEvents=0;
+  S.arc.generating=false; S.arc.ready=false;
+  S.arc.prevTitle=''; S.arc.prevLogline='';
   const world=WORLDS[w];
   S.weather  =world.weathers[Math.floor(Math.random()*world.weathers.length)];
-  S.timeOfDay=world.times[Math.floor(Math.random()*world.times.length)];
+  // Start epochIdx at a random time-of-day position
+  S.arc.epochIdx = Math.floor(Math.random()*world.times.length);
+  S.timeOfDay=world.times[S.arc.epochIdx];
   S.agentStates={};
   world.agents.forEach(a=>{ S.agentStates[a.id]=a.state; });
   document.getElementById('tr-world').textContent=w;
@@ -1513,6 +1577,177 @@ function initWorld(w){
   if (typeof updatePanelState   === 'function') updatePanelState();
   if (typeof updatePanelAgents  === 'function') updatePanelAgents();
   if (typeof updateCacheCount   === 'function') updateCacheCount();
+  if (typeof updatePanelArc     === 'function') updatePanelArc();
+}
+
+// ═══════════════════════════════════════════════════════════
+// STORY ARC — epoch-based narrative with beat tracking
+// ═══════════════════════════════════════════════════════════
+
+const ARC_SYSTEM = `You generate story arcs for living ambient sound worlds.
+An arc is a short grounded narrative that plays out through a sequence of sound events.
+Keep it earthy and specific — things that could actually be heard.
+No metaphors, no drama for drama's sake. Just what unfolds.`;
+
+async function generateArc() {
+  if (!S.running) return;
+  S.arc.generating = true; S.arc.ready = false;
+  updatePanelArc();
+  const world = WORLDS[S.world];
+  const agentNames = world.agents.map(a => a.label).join(', ');
+  const memory = S.arc.prevTitle
+    ? `PREVIOUS ARC: "${S.arc.prevTitle}" — "${S.arc.prevLogline}" (let this linger loosely)`
+    : `PREVIOUS ARC: none`;
+
+  const prompt =
+`WORLD: ${world.label}
+TIME: ${S.timeOfDay}
+WEATHER: ${S.weather}
+AGENTS: ${agentNames}
+
+${memory}
+
+Generate a story arc for this epoch. It should involve 2–3 agents and feel grounded in what you'd actually hear in this environment. Something small, specific, and consequential.
+
+Respond ONLY with valid JSON:
+{
+  "title": "short evocative title, 3–5 words",
+  "logline": "one sentence — what happens across this arc",
+  "beats": [
+    "setup: ...",
+    "development: ...",
+    "peak: ...",
+    "resolution: ...",
+    "residue: ..."
+  ]
+}`;
+
+  try {
+    const res = await fetch('/claude', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:400,
+        system: ARC_SYSTEM, messages:[{role:'user',content:prompt}] })
+    });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const parsed = JSON.parse(data.content[0].text.trim().replace(/```json|```/g,'').trim());
+    S.arc.title    = parsed.title    || S.timeOfDay;
+    S.arc.logline  = parsed.logline  || '';
+    S.arc.beats    = Array.isArray(parsed.beats) ? parsed.beats : ['unfolds'];
+    S.arc.beatIdx  = 0;
+    S.arc.beatEvents = 0;
+  } catch(e) {
+    console.warn('arc generation failed:', e);
+    S.arc.title   = S.timeOfDay;
+    S.arc.logline = '';
+    S.arc.beats   = ['setup', 'development', 'peak', 'resolution', 'residue'];
+    S.arc.beatIdx = 0; S.arc.beatEvents = 0;
+  }
+  S.arc.generating = false; S.arc.ready = true;
+  updatePanelArc();
+}
+
+function advanceBeat() {
+  if (!S.arc.ready || S.arc.beatEvents < 2) return;
+  if (S.arc.beatIdx < S.arc.beats.length - 1) {
+    S.arc.beatIdx++;
+    S.arc.beatEvents = 0;
+    updatePanelArc();
+  }
+}
+
+let _epochStart = 0;
+let _epochDuration = 0;
+let _epochBarInterval = null;
+
+function scheduleEpoch() {
+  clearTimeout(S.arc.epochTimer);
+  clearInterval(_epochBarInterval);
+  if (!S.running) return;
+  _epochDuration = (5 + Math.random() * 4) * 60 * 1000; // 5–9 min
+  _epochStart = Date.now();
+  // Animate the epoch progress bar
+  _epochBarInterval = setInterval(() => {
+    const bar = document.getElementById('pa-epoch-bar');
+    if (bar) bar.style.width = Math.min(100, (Date.now() - _epochStart) / _epochDuration * 100).toFixed(1) + '%';
+  }, 4000);
+  S.arc.epochTimer = setTimeout(advanceEpoch, _epochDuration);
+}
+
+async function advanceEpoch() {
+  if (!S.running) return;
+  clearInterval(_epochBarInterval);
+  // Save loose memory
+  S.arc.prevTitle   = S.arc.title;
+  S.arc.prevLogline = S.arc.logline;
+  // Advance time of day
+  const world = WORLDS[S.world];
+  S.arc.epochIdx = (S.arc.epochIdx + 1) % world.times.length;
+  S.timeOfDay = world.times[S.arc.epochIdx];
+  // Flash display
+  const weatherEl = document.getElementById('tr-weather');
+  if (weatherEl) weatherEl.textContent = `${S.weather} · ${S.timeOfDay}`;
+  const timeEl = document.getElementById('ps-time');
+  if (timeEl) { timeEl.style.color = 'var(--p-accent)'; setTimeout(() => timeEl.style.color = '', 2500); }
+  updatePanelState();
+  // Generate new arc, then re-schedule
+  await generateArc();
+  scheduleEpoch();
+}
+
+function updatePanelArc() {
+  const titleEl    = document.getElementById('pa-title');
+  const loglineEl  = document.getElementById('pa-logline');
+  const dotsEl     = document.getElementById('pa-dots');
+  const beatDesc   = document.getElementById('pa-beat-desc');
+  const epochLabel = document.getElementById('pa-epoch');
+  if (!titleEl) return;
+
+  if (S.arc.generating) {
+    titleEl.textContent  = 'composing arc…';
+    titleEl.className    = 'arc-title generating';
+    loglineEl.textContent = '';
+    dotsEl.innerHTML     = '';
+    beatDesc.textContent = '';
+    if (epochLabel) epochLabel.textContent = `epoch ${S.arc.epochIdx + 1}`;
+    return;
+  }
+
+  if (!S.arc.ready) {
+    titleEl.textContent  = 'waiting to start';
+    titleEl.className    = 'arc-title generating';
+    loglineEl.textContent = '';
+    dotsEl.innerHTML     = '';
+    beatDesc.textContent = '';
+    if (epochLabel) epochLabel.textContent = '—';
+    return;
+  }
+
+  // Title & logline
+  titleEl.textContent   = S.arc.title;
+  titleEl.className     = 'arc-title';
+  loglineEl.textContent = S.arc.logline;
+
+  // Beat dots
+  dotsEl.innerHTML = '';
+  S.arc.beats.forEach((beat, i) => {
+    const dot = document.createElement('span');
+    dot.className = 'arc-dot' +
+      (i < S.arc.beatIdx ? ' done' : i === S.arc.beatIdx ? ' active' : '');
+    dot.title = beat;
+    dotsEl.appendChild(dot);
+  });
+
+  // Current beat description (strip "setup: " prefix labels)
+  const raw = S.arc.beats[S.arc.beatIdx] || '';
+  beatDesc.textContent = raw.replace(/^[a-z]+:\s*/i, '');
+
+  // Epoch label
+  const world = WORLDS[S.world];
+  if (epochLabel) {
+    const timeLabel = world ? world.times[S.arc.epochIdx] || '' : '';
+    epochLabel.textContent = `epoch ${S.arc.epochIdx + 1} · ${timeLabel}`;
+  }
 }
 
 function startEngine(){
@@ -1528,10 +1763,12 @@ function startEngine(){
   },500);
   setTimeout(()=>fireEvent().then(()=>scheduleNext()),600);
   applyWeatherToVibe(); scheduleWeatherDrift();
+  generateArc(); scheduleEpoch();
 }
 
 function stopEngine(){
   S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval); clearTimeout(S.weatherTimeout);
+  clearTimeout(S.arc.epochTimer); clearInterval(_epochBarInterval);
   stopAmbient(); stopViz(); stopGhostLayer(); stopMelody(); stopPad();
   document.getElementById('countdown').textContent='';
   document.getElementById('start-btn').textContent='▶';
