@@ -1614,6 +1614,37 @@ function buildAgentStrip(){
   });
 }
 
+// Map the current hour to the closest entry in a world's times array
+function realTimeIdx(times) {
+  const h = new Date().getHours(); // 0-23
+  // Score each label by how well it matches the current hour
+  const SCORES = {
+    'pre-dawn':     [3,4,5],
+    'dawn':         [5,6,7],
+    'dawn chorus':  [5,6,7],
+    'early morning':[6,7,8],
+    'morning':      [8,9,10,11],
+    'morning rush': [7,8,9],
+    'rush hour':    [7,8,9],
+    'midday':       [11,12,13],
+    'afternoon':    [13,14,15,16],
+    'late afternoon':[15,16,17],
+    'dusk':         [17,18,19],
+    'evening rush': [17,18,19],
+    'evening':      [19,20,21],
+    'night':        [22,23,0,1,2,3],
+  };
+  let best = 0, bestDist = Infinity;
+  times.forEach((label, i) => {
+    const hours = SCORES[label.toLowerCase()] || [];
+    const dist = hours.length
+      ? Math.min(...hours.map(hh => Math.min(Math.abs(h-hh), 24-Math.abs(h-hh))))
+      : 12; // unknown label — deprioritise
+    if (dist < bestDist) { bestDist = dist; best = i; }
+  });
+  return best;
+}
+
 function initWorld(w){
   S.world=w; S.recentEvents=[]; S.eventCount=0; phaseIdx=0; phaseEvts=0;
   clearTimeout(S.weatherTimeout);
@@ -1625,8 +1656,8 @@ function initWorld(w){
   S.arc.prevTitle=''; S.arc.prevLogline='';
   const world=WORLDS[w];
   S.weather  =world.weathers[Math.floor(Math.random()*world.weathers.length)];
-  // Start epochIdx at a random time-of-day position
-  S.arc.epochIdx = Math.floor(Math.random()*world.times.length);
+  // Start at the time of day that matches the current real-world clock
+  S.arc.epochIdx = realTimeIdx(world.times);
   S.timeOfDay=world.times[S.arc.epochIdx];
   S.agentStates={};
   world.agents.forEach(a=>{ S.agentStates[a.id]=a.state; });
