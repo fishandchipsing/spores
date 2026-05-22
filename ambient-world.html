@@ -922,45 +922,44 @@ function debugLine(key, val) {
 // MELODIC TONE LAYER
 // ═══════════════════════════════════════════════════════════
 const MELODY_CFG = {
-  // water — high C pentatonic, wet + spacious, barely dissonant
-  // rhythms: beat-duration arrays, null = rest (1 beat of silence)
-  water:  { freqs:[523.25,587.33,659.26,783.99,880.00,1046.50,1174.66,1318.51],
-            wave:'sine',     vol:0.16, atk:0.010, beatMult:1.6,
-            relShort:0.10, relLong:0.60,
-            triMix:0.05, peakHz:1400, peakGain:2,  dlyTime:0.11, dlyWet:0.20, dlyFb:0.32,
-            gap:[2.0, 5.0],
+  // water — C pentatonic, sine, wet + spacious. Seldom gentle phrase.
+  water:  { freqs:[261.63, 392.00, 523.25, 587.33, 659.26, 783.99, 880.00, 1046.50],
+            wave:'sine', vol:0.18, atk:0.025,
+            relShort:0.50, relLong:3.2,
+            peakHz:900, peakGain:2, dlyTime:0.18, dlyWet:0.40, dlyFb:0.42,
+            interval:[28, 75],
             rhythms:[
-              [1, 0.5, 0.5, null, 1.5],          // note · ripple-ripple · rest · hold
-              [0.5, 0.5, null, null, 1],           // pair · long rest · note
-              [1, null, 0.5, 0.5, null, 1],        // note · rest · pair · rest · note
-              [2, null, null, 0.5, 0.5],           // long hold · silence · two quick
-              [0.5, 0.5, 0.5, null, null, null],   // three quick then trailing silence
+              [1, null, 1, null, 1.5],
+              [0.5, 0.5, null, null, null, 2],
+              [1, null, null, 0.5, 0.5],
+              [null, 1, null, null, 2],
+              [0.5, 0.5, 0.5],
             ]},
-  // city — semi-chromatic, triangle wave, digital + dry, strong dissonance
-  city:   { freqs:[440.00,493.88,523.25,554.37,659.26,740.00,830.61,880.00,1108.73],
-            wave:'triangle', vol:0.14, atk:0.008, beatMult:0.8,
-            relShort:0.04, relLong:0.16,
-            triMix:0.28, peakHz:3600, peakGain:14, dlyTime:0.03, dlyWet:0.04, dlyFb:0.12,
-            gap:[0.5, 2.0],
+  // city — A minor pentatonic, triangle, sparse + musical
+  city:   { freqs:[440.00, 523.25, 587.33, 659.26, 783.99, 880.00, 1046.50, 1174.66],
+            wave:'triangle', vol:0.13, atk:0.012,
+            relShort:0.30, relLong:1.6,
+            peakHz:2200, peakGain:3, dlyTime:0.09, dlyWet:0.24, dlyFb:0.30,
+            interval:[20, 55],
             rhythms:[
-              [0.5, 0.5, 0.5, null, 0.5, 0.5],      // three · rest · two
-              [0.5, null, 0.5, 0.5, null, 1],         // jabby syncopated
-              [0.25, 0.25, 0.25, 0.25, null, 0.5],    // fast cluster · rest · held
-              [1, 0.5, 0.5, null, null, 0.5],          // long · pair · silence · snap
-              [0.5, 0.5, null, 0.5, null, 0.5, 0.5],  // alternating stabs
+              [0.5, null, 0.5, null, 1],
+              [1, 0.5, 0.5, null, null],
+              [0.5, 0.5, null, null, 0.5],
+              [null, 0.5, 0.5, 0.5],
+              [1, null, null, 1],
             ]},
-  // forest — G pentatonic mid, sine, very soft + warm, almost no dissonance
-  forest: { freqs:[392.00,440.00,523.25,587.33,659.26,783.99,880.00,1046.50],
-            wave:'sine',     vol:0.13, atk:0.018, beatMult:2.0,
-            relShort:0.14, relLong:0.90,
-            triMix:0.03, peakHz:700,  peakGain:1,  dlyTime:0.14, dlyWet:0.18, dlyFb:0.28,
-            gap:[3.0, 8.0],
+  // forest — G pentatonic, sine, very long tails, very seldom
+  forest: { freqs:[196.00, 261.63, 392.00, 440.00, 523.25, 587.33, 659.26, 783.99],
+            wave:'sine', vol:0.15, atk:0.035,
+            relShort:0.70, relLong:4.5,
+            peakHz:600, peakGain:1, dlyTime:0.24, dlyWet:0.48, dlyFb:0.46,
+            interval:[40, 100],
             rhythms:[
-              [1, null, null, 0.75, 0.75, null, null], // note · long-rest · pair · silence
-              [null, null, 1, null, null, null, 2],     // two-beat rest · note · long rest · hold
-              [0.5, 0.5, null, null, null, 1.5],        // quick pair · long silence · held
-              [null, 1, null, null, 0.5, 0.5],          // rest · note · rests · pair
-              [1, null, 1, null, null, null],            // two notes with breathing
+              [1, null, null, null, 1.5],
+              [null, null, 1, null, null, null, 1],
+              [0.5, 0.5, null, null, null],
+              [null, 1, null, null, null, null],
+              [1, null, 0.5, 0.5],
             ]},
 };
 let melodyTimer = null;
@@ -1044,28 +1043,21 @@ function playNote(world, freq, relOverride) {
   if (!ctx || !masterGain) return;
   const m = MELODY_CFG[world];
 
-  // ±25 cent detune — alive, slightly wrong
-  const cents = (Math.random() * 50 - 25);
+  // ±8 cent human-touch detune — alive but not wrong
+  const cents = (Math.random() * 16 - 8);
   const f = freq * Math.pow(2, cents / 1200);
 
-  // timing jitter ±30ms
-  const t = ctx.currentTime + Math.max(0, Math.random() * 0.06 - 0.03);
-  const atk = m.atk ?? 0.010;
-  const rel = relOverride !== undefined ? relOverride : (m.relShort ?? m.rel ?? 0.10) + Math.random() * 0.04;
+  // timing jitter ±20ms
+  const t = ctx.currentTime + Math.max(0, Math.random() * 0.04 - 0.02);
+  const atk = m.atk ?? 0.020;
+  const rel = relOverride !== undefined ? relOverride : (m.relShort ?? 0.40) + Math.random() * 0.08;
 
-  // main oscillator
+  // main oscillator — clean, no dissonance added
   const osc = ctx.createOscillator();
   osc.type = m.wave || 'sine';
   osc.frequency.value = f;
 
-  // tritone dissonance osc at 15% — always slightly clashing
-  const triOsc = ctx.createOscillator();
-  triOsc.type = 'sine';
-  triOsc.frequency.value = f * Math.pow(2, 6 / 12);
-  const triGain = ctx.createGain();
-  triGain.gain.value = 0.15;
-
-  // shared envelope
+  // soft envelope
   const env = ctx.createGain();
   env.gain.setValueAtTime(0, t);
   env.gain.linearRampToValueAtTime(m.vol, t + atk);
@@ -1073,126 +1065,100 @@ function playNote(world, freq, relOverride) {
 
   const dest = melodyGain || masterGain;
 
-  // world-specific synthesis params
-  const triMix  = m.triMix  ?? 0.15;
-  const peakHz  = m.peakHz  ?? 3000;
-  const peakGn  = m.peakGain ?? 8;
-  const dlyTime = m.dlyTime ?? 0.055;
-  const dlyFbV  = m.dlyFb   ?? 0.20;
-  const dlyWetV = m.dlyWet  ?? 0.08;
-
-  // tritone dissonance osc — volume is world-specific
-  triGain.gain.value = triMix;
-
-  // peaking filter — color varies by world
+  // gentle peaking colour
   const peak = ctx.createBiquadFilter();
-  peak.type = 'peaking'; peak.frequency.value = peakHz; peak.gain.value = peakGn; peak.Q.value = 1.0;
+  peak.type = 'peaking';
+  peak.frequency.value = m.peakHz ?? 1000;
+  peak.gain.value = m.peakGain ?? 2;
+  peak.Q.value = 0.8;
 
-  // light waveshaper — barely-there harmonic warmth
-  const shaper = ctx.createWaveShaper();
-  const curve = new Float32Array(256);
-  for (let i = 0; i < 256; i++) {
-    const x = (i * 2) / 256 - 1;
-    curve[i] = x + 0.06 * Math.sin(x * Math.PI);
-  }
-  shaper.curve = curve; shaper.oversample = '2x';
+  // wet reverb tail — harmonic blend
+  const dly = ctx.createDelay(1.0); dly.delayTime.value = m.dlyTime ?? 0.18;
+  const fb  = ctx.createGain(); fb.gain.value = m.dlyFb ?? 0.38;
+  const wet = ctx.createGain(); wet.gain.value = m.dlyWet ?? 0.35;
 
-  // delay reverb — depth and time vary by world
-  const dly = ctx.createDelay(0.5); dly.delayTime.value = dlyTime;
-  const fb  = ctx.createGain(); fb.gain.value = dlyFbV;
-  const wet = ctx.createGain(); wet.gain.value = dlyWetV;
-
-  // routing
-  osc.connect(env); triOsc.connect(triGain); triGain.connect(env);
-  env.connect(peak); peak.connect(shaper);
-  shaper.connect(dest);
-  shaper.connect(dly); dly.connect(fb); fb.connect(dly); // feedback loop
+  // routing (clean: no tritone osc, no waveshaper)
+  osc.connect(env);
+  env.connect(peak); peak.connect(dest);
+  peak.connect(dly); dly.connect(fb); fb.connect(dly);
   dly.connect(wet); wet.connect(dest);
 
-  const stopT = t + atk + rel + 0.5;
-  osc.start(t); triOsc.start(t);
-  osc.stop(stopT); triOsc.stop(stopT);
+  const stopT = t + atk + rel + 1.5;
+  osc.start(t);
+  osc.stop(stopT);
 }
 
 function playPhrase(world) {
   const m = MELODY_CFG[world]; if (!m||!ctx||!masterGain||!S.running) return;
 
   const fl   = m.freqs.length;
-  const SEMI = Math.pow(2, 1/12);
-  const beat = beatMs() * m.beatMult;
+  // beat: use a fixed 70bpm feel regardless of S.bpm, so phrases feel musical not mechanical
+  const beat = 860;
 
-  // pick a rhythm pattern (weighted toward activity level)
   const patterns = m.rhythms;
   const pat = patterns[Math.floor(Math.random() * patterns.length)];
 
-  // starting pitch — register maps 0→1 into freq array, jittered ±2
+  // starting pitch — register maps into freq array
   const center = Math.round(VIBE.register * (fl - 1));
-  let idx = Math.max(0, Math.min(fl - 1, center + Math.round((Math.random() - 0.5) * 4)));
+  let idx = Math.max(0, Math.min(fl - 1, center + Math.round((Math.random() - 0.5) * 3)));
 
-  // walk through the pattern, collecting {t, freq, isLast}
-  const maxStep = VIBE.tension > 0.6 ? 1 : VIBE.tension > 0.3 ? 2 : 3;
+  // walk pattern — only scale notes, no wrong-note injection
   let t = 0;
   const events = [];
   pat.forEach(dur => {
     if (dur !== null) {
-      let freq = m.freqs[Math.max(0, Math.min(fl - 1, idx))];
-      if (Math.random() < 0.20) freq *= Math.random() > 0.5 ? SEMI : 1 / SEMI;
+      const freq = m.freqs[Math.max(0, Math.min(fl - 1, idx))];
       events.push({ ms: t, freq });
-      // step melody
       const dir = Math.random() < 0.5 ? 1 : -1;
-      idx = Math.max(0, Math.min(fl - 1, idx + dir * (1 + Math.floor(Math.random() * maxStep))));
+      const step = 1 + Math.floor(Math.random() * 2);
+      idx = Math.max(0, Math.min(fl - 1, idx + dir * step));
     }
-    t += beat * (dur ?? 1); // null = 1 beat of silence
+    t += beat * (dur ?? 1);
   });
 
-  // schedule notes — last note gets long release, others short
+  // last note rings long, others have warm sustain
   events.forEach((ev, i) => {
     const isLast = i === events.length - 1;
     const rel = isLast
-      ? (m.relLong ?? 0.40) + Math.random() * 0.12
-      : (m.relShort ?? 0.08) + Math.random() * 0.04;
+      ? (m.relLong ?? 3.0) + Math.random() * 0.5
+      : (m.relShort ?? 0.50) + Math.random() * 0.15;
     setTimeout(() => { if (S.running) playNote(world, ev.freq, rel); }, ev.ms);
   });
 
   debugLine('tone', events.map(e => Math.round(e.freq) + 'Hz').join(' · '));
 
-  // gap to next phrase: variable rest based on world character
-  const [gMin, gMax] = m.gap || [1.0, 3.0];
-  const gap = beat * (gMin + Math.random() * (gMax - gMin));
-  melodyTimer = setTimeout(() => { if (S.running) playPhrase(S.world); }, t + gap);
+  // long silence before next phrase (interval in seconds)
+  const [iMin, iMax] = m.interval || [30, 80];
+  const wait = (iMin + Math.random() * (iMax - iMin)) * 1000;
+  melodyTimer = setTimeout(() => { if (S.running) playPhrase(S.world); }, t + wait);
 }
 
-// Reactive burst — fires immediately on each agent event
+// Reactive accent — only on significant events, 1-2 harmonic notes
 function playReact(ev) {
   if (!ctx || !masterGain || !S.running) return;
   const m = MELODY_CFG[S.world]; if (!m) return;
-  const SEMITONE = Math.pow(2, 1/12);
-  const typeMap = {
-    conflict:    { count:4, speedMs:55,  reg:0.90 },
-    interaction: { count:3, speedMs:85,  reg:0.75 },
-    moment:      { count:2, speedMs:120, reg:0.65 },
-    shift:       { count:3, speedMs:110, reg:0.55 },
-    passing:     { count:2, speedMs:160, reg:0.45 },
-    distant:     { count:1, speedMs:200, reg:0.35 },
-    residue:     { count:2, speedMs:240, reg:0.28 },
-  };
-  const cfg = typeMap[ev?.type] || typeMap.moment;
+  // Only react to notable events; skip minor ones entirely
+  const notable = { conflict:true, interaction:true, shift:true };
+  if (!notable[ev?.type]) return;
+  if (Math.random() < 0.45) return; // 45% chance to stay silent even then
+
   const fl = m.freqs.length;
-  const center = Math.round(cfg.reg * (fl - 1));
-  for (let i = 0; i < cfg.count; i++) {
-    if (Math.random() < 0.20) continue; // 20% skip
-    const offset = Math.round((Math.random() - 0.5) * 4);
-    let freq = m.freqs[Math.max(0, Math.min(fl-1, center + offset))];
-    if (Math.random() < 0.25) freq *= Math.random() > 0.5 ? SEMITONE : 1/SEMITONE;
-    const delay = i * cfg.speedMs + (Math.random() * 40 - 20);
-    setTimeout(() => { if (S.running) playNote(S.world, freq); }, Math.max(0, delay));
+  const center = Math.round(VIBE.register * (fl - 1));
+  const count = ev?.type === 'conflict' ? 2 : 1;
+  for (let i = 0; i < count; i++) {
+    const offset = Math.round((Math.random() - 0.5) * 3);
+    const freq = m.freqs[Math.max(0, Math.min(fl-1, center + offset))];
+    const rel = (m.relShort ?? 0.50) + Math.random() * 0.2;
+    setTimeout(() => { if (S.running) playNote(S.world, freq, rel); }, i * 280 + Math.random() * 60);
   }
 }
 
 function startMelody(world) {
   stopMelody();
   const m = MELODY_CFG[world]; if (!m) return;
-  melodyTimer = setTimeout(()=>{ if(S.running) playPhrase(world); }, beatMs()*2);
+  // First phrase after 12-25s so the world has time to breathe first
+  const initDelay = (12 + Math.random() * 13) * 1000;
+  melodyTimer = setTimeout(()=>{ if(S.running) playPhrase(world); }, initDelay);
 }
 
 function stopMelody() { clearTimeout(melodyTimer); melodyTimer = null; }
