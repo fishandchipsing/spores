@@ -140,6 +140,25 @@
     flex-shrink: 0;
   }
   #start-btn.on { background: var(--accent); }
+  #shake-btn {
+    width: 26px; height: 26px;
+    background: transparent; border: 1px solid var(--muted); border-radius: 4px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 11px; font-family: inherit;
+    transition: color 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+  }
+  #shake-btn:hover { color: var(--accent); border-color: var(--accent); }
+  #shake-btn.shaking { animation: shake-anim 0.45s ease-out; }
+  @keyframes shake-anim {
+    0%  { transform: translateX(0); }
+    15% { transform: translateX(-4px) rotate(-2deg); }
+    30% { transform: translateX(4px)  rotate(2deg); }
+    45% { transform: translateX(-3px) rotate(-1deg); }
+    60% { transform: translateX(3px); }
+    75% { transform: translateX(-2px); }
+    100%{ transform: translateX(0); }
+  }
 
   /* ── Meta strip below pill ─────────────────────────────────── */
   #meta {
@@ -247,6 +266,7 @@
       <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="0.5">
     </div>
     <button id="start-btn">▶</button>
+    <button id="shake-btn" title="shake the radio">⌇</button>
   </div>
 </div>
 
@@ -270,8 +290,12 @@
     <input type="range" id="mix-mel" class="mix-slider" min="0" max="1" step="0.01" value="0.85">
   </div>
   <div class="mix-row">
+    <span class="mix-label">pad</span>
+    <input type="range" id="mix-pad" class="mix-slider" min="0" max="1" step="0.01" value="0.70">
+  </div>
+  <div class="mix-row">
     <span class="mix-label">sfx</span>
-    <input type="range" id="mix-sfx" class="mix-slider" min="0" max="1" step="0.01" value="0.5">
+    <input type="range" id="mix-sfx" class="mix-slider" min="0" max="1" step="0.01" value="0.75">
   </div>
 </div>
 
@@ -431,7 +455,8 @@ const S = {
 let ctx, masterGain, ambGain;
 let noiseSource, noiseFilter, lfoNode, lfoGain;
 let noiseSource2, lfoNode2;
-let noiseChGain = null, melodyGain = null, sfxGain = null;
+let noiseChGain = null, melodyGain = null, sfxGain = null, padGain = null;
+let padTimer = null;
 
 function buildNoise(type) {
   const bufLen = ctx.sampleRate * 4;
@@ -475,8 +500,12 @@ function startAmbient(world) {
   melodyGain.connect(masterGain);
 
   sfxGain = ctx.createGain();
-  sfxGain.gain.value = parseFloat(document.getElementById('mix-sfx')?.value ?? 0.5);
+  sfxGain.gain.value = parseFloat(document.getElementById('mix-sfx')?.value ?? 0.75);
   sfxGain.connect(masterGain);
+
+  padGain = ctx.createGain();
+  padGain.gain.value = parseFloat(document.getElementById('mix-pad')?.value ?? 0.70);
+  padGain.connect(masterGain);
 
   ambGain = ctx.createGain(); ambGain.gain.value=0; ambGain.connect(noiseChGain);
 
@@ -519,6 +548,7 @@ function stopAmbient() {
   if (noiseChGain) { noiseChGain.disconnect(); noiseChGain=null; }
   if (melodyGain)  { melodyGain.disconnect();  melodyGain=null; }
   if (sfxGain)     { sfxGain.disconnect();     sfxGain=null; }
+  if (padGain)     { padGain.disconnect();     padGain=null; }
 }
 
 document.getElementById('vol-slider').addEventListener('input', e => {
@@ -547,8 +577,8 @@ async function playSFX(soundPrompt, direction, vol=1.0) {
     const sg  = ctx.createGain(); sg.gain.value = 0;
     src.connect(lp); lp.connect(pan); pan.connect(sg); sg.connect(sfxGain||masterGain||ctx.destination);
     const st = ctx.currentTime;
-    sg.gain.setTargetAtTime(0.22 * vol, st, 0.4);
-    sg.gain.setTargetAtTime(0, st + 3.0, 0.8);
+    sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
+    sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
     src.start();
   } catch(e) { console.warn('SFX fail:',e); }
 }
@@ -910,6 +940,79 @@ function startMelody(world) {
 
 function stopMelody() { clearTimeout(melodyTimer); melodyTimer = null; }
 
+// ═══════════════════════════════════════════════════════════
+// PAD LAYER — long slow notes fading in/out, tuned to VIBE
+// ═══════════════════════════════════════════════════════════
+const PAD_CFG = {
+  // water — open fifths and fourths, deep sine, very slow fade
+  water:  { freqs:[130.81,174.61,196.00,261.63,293.66,349.23,392.00],
+            vol:0.038, fadeIn:3.5, hold:6.0, fadeOut:4.0, interval:[8,18] },
+  // city — minor 2nds and tritones, sawtooth filtered down, tense
+  city:   { freqs:[110.00,116.54,146.83,155.56,185.00,220.00,233.08],
+            vol:0.030, fadeIn:2.0, hold:4.0, fadeOut:2.5, interval:[5,12] },
+  // forest — low harmonics, pure sine, very long and quiet
+  forest: { freqs:[98.00,130.81,146.83,174.61,196.00,261.63,293.66],
+            vol:0.032, fadeIn:5.0, hold:9.0, fadeOut:6.0, interval:[12,25] },
+};
+
+function playPad(world) {
+  if (!ctx || !padGain || !S.running) return;
+  const p = PAD_CFG[world]; if (!p) return;
+
+  // register maps VIBE into freq list (low register = low freq)
+  const fl = p.freqs.length;
+  const center = Math.round((1 - VIBE.register) * (fl - 1));
+  const offset = Math.floor((Math.random() - 0.5) * 3);
+  const freq = p.freqs[Math.max(0, Math.min(fl - 1, center + offset))];
+
+  // occasional harmonic layering (fifth above at 40% vol)
+  const playHarmonic = Math.random() < 0.45;
+
+  const voices = [{ f: freq, v: p.vol }];
+  if (playHarmonic) voices.push({ f: freq * 1.5, v: p.vol * 0.40 });
+  // tension adds a slight dissonant neighbour
+  if (VIBE.tension > 0.5) voices.push({ f: freq * Math.pow(2, 1/12), v: p.vol * 0.18 });
+
+  voices.forEach(({ f, v }) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+
+    // gentle lowpass — pads should be warm, not bright
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 600 + VIBE.tension * 400; lp.Q.value = 0.5;
+
+    const env = ctx.createGain(); env.gain.value = 0;
+    const now = ctx.currentTime;
+    env.gain.setTargetAtTime(v, now, p.fadeIn / 3);
+    env.gain.setTargetAtTime(v * 0.85, now + p.fadeIn, 1.0);       // slight settle
+    env.gain.setTargetAtTime(0.0001, now + p.fadeIn + p.hold, p.fadeOut / 3);
+
+    osc.connect(lp); lp.connect(env); env.connect(padGain);
+    osc.start(now);
+    osc.stop(now + p.fadeIn + p.hold + p.fadeOut + 0.5);
+  });
+}
+
+function schedulePad() {
+  clearTimeout(padTimer);
+  if (!S.running) return;
+  const p = PAD_CFG[S.world];
+  if (!p) return;
+  const [iMin, iMax] = p.interval;
+  const delay = (iMin + Math.random() * (iMax - iMin)) * 1000;
+  padTimer = setTimeout(() => { playPad(S.world); schedulePad(); }, delay);
+}
+
+function startPad(world) {
+  stopPad();
+  if (!PAD_CFG[world]) return;
+  // first note after a short intro pause
+  padTimer = setTimeout(() => { playPad(world); schedulePad(); }, 3000 + Math.random() * 4000);
+}
+
+function stopPad() { clearTimeout(padTimer); padTimer = null; }
+
 function stopGhostLayer() {
   GHOST.active=false;
   clearTimeout(GHOST.loopTimer); clearInterval(GHOST.refreshTimer);
@@ -1141,7 +1244,7 @@ function initWorld(w){
     VIEW.creatureAngle[a.id] = Math.random() * Math.PI * 2;
     VIEW.wobble[a.id] = 0; VIEW.age[a.id] = 0; VIEW.tailHist[a.id] = [];
   });
-  if(S.running){ startAmbient(w); startMelody(w); }
+  if(S.running){ startAmbient(w); startMelody(w); startPad(w); }
 }
 
 function startEngine(){
@@ -1149,7 +1252,7 @@ function startEngine(){
   document.getElementById('start-btn').textContent='■';
   document.getElementById('start-btn').classList.add('on');
   document.getElementById('radio-bars').classList.add('live');
-  startAmbient(S.world); startViz(); startGhostLayer(); startMelody(S.world);
+  startAmbient(S.world); startViz(); startGhostLayer(); startMelody(S.world); startPad(S.world);
   S.cdInterval=setInterval(()=>{
     if(!S.running||!S.nextAt) return;
     const rem=Math.max(0,S.nextAt-Date.now());
@@ -1161,7 +1264,7 @@ function startEngine(){
 
 function stopEngine(){
   S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval); clearTimeout(S.weatherTimeout);
-  stopAmbient(); stopViz(); stopGhostLayer(); stopMelody();
+  stopAmbient(); stopViz(); stopGhostLayer(); stopMelody(); stopPad();
   document.getElementById('countdown').textContent='';
   document.getElementById('start-btn').textContent='▶';
   document.getElementById('start-btn').classList.remove('on');
@@ -1639,6 +1742,44 @@ document.getElementById('mix-mel').addEventListener('input', e => {
 });
 document.getElementById('mix-sfx').addEventListener('input', e => {
   if (sfxGain && ctx) sfxGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
+});
+document.getElementById('mix-pad').addEventListener('input', e => {
+  if (padGain && ctx) padGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
+});
+
+// ── Shake button ─────────────────────────────────────────────────
+document.getElementById('shake-btn').addEventListener('click', () => {
+  if (!S.running || !ctx) return;
+  const btn = document.getElementById('shake-btn');
+  btn.classList.remove('shaking');
+  void btn.offsetWidth; // reflow to restart animation
+  btn.classList.add('shaking');
+  setTimeout(() => btn.classList.remove('shaking'), 500);
+
+  // 1. LFO spike — sudden turbulence in the ambient layer
+  if (lfoGain) {
+    const base = WORLDS[S.world].ambient.lfo.depth;
+    lfoGain.gain.cancelScheduledValues(ctx.currentTime);
+    lfoGain.gain.setValueAtTime(base * 6, ctx.currentTime);
+    lfoGain.gain.setTargetAtTime(base, ctx.currentTime + 0.1, 1.8);
+  }
+
+  // 2. ambGain pulse — brief volume thump
+  if (ambGain) {
+    ambGain.gain.cancelScheduledValues(ctx.currentTime);
+    ambGain.gain.setValueAtTime(ambGain.gain.value * 2.2, ctx.currentTime);
+    ambGain.gain.setTargetAtTime(0.55, ctx.currentTime + 0.05, 1.2);
+  }
+
+  // 3. Immediate pad note — the shake colours the harmony
+  playPad(S.world);
+
+  // 4. Reactive melody burst — conflict level
+  playReact({ type: 'conflict' });
+
+  // 5. VIBE jolt
+  VIBE.activity = Math.min(1, VIBE.activity + 0.4);
+  VIBE.tension  = Math.min(1, VIBE.tension  + 0.35);
 });
 </script>
 </body>
