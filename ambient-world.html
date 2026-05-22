@@ -370,6 +370,37 @@
   .pl-detail.open { display: block; }
   .pl-detail::-webkit-scrollbar { width: 2px; }
   .pl-detail::-webkit-scrollbar-thumb { background: var(--p-dim); }
+
+  /* sounds list */
+  #panel-sounds { max-height: 170px; overflow-y: auto; }
+  #panel-sounds::-webkit-scrollbar { width: 2px; }
+  #panel-sounds::-webkit-scrollbar-thumb { background: var(--p-dim); }
+  .ps-head-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 9px;
+  }
+  .ps-cache-count {
+    font-size: 8px; color: var(--p-dim); letter-spacing: 0.06em;
+  }
+  .sound-entry {
+    display: flex; gap: 7px; align-items: baseline;
+    font-size: 9px; line-height: 1.5; margin-bottom: 5px;
+    opacity: 1; transition: opacity 3s ease 2s;
+  }
+  .sound-entry.fading { opacity: 0.35; }
+  .se-time { color: var(--p-dim); flex-shrink: 0; font-size: 8px; }
+  .se-kind {
+    flex-shrink: 0; font-size: 7px; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 2px;
+  }
+  .se-kind.live  { background: #18221a; color: #80b870; }
+  .se-kind.ghost { background: #1a1820; color: #8070a8; }
+  .se-dir { color: var(--p-dim); flex-shrink: 0; }
+  .se-text {
+    color: var(--p-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+  }
+  .se-text.filename { color: var(--p-mid); font-style: italic; }
 </style>
 </head>
 <body>
@@ -499,6 +530,14 @@
   <div class="panel-section" id="panel-agents">
     <div class="panel-head">agents</div>
     <div id="pa-list"></div>
+  </div>
+
+  <div class="panel-section" id="panel-sounds" style="flex-shrink:0;">
+    <div class="ps-head-row">
+      <div class="panel-head" style="margin-bottom:0">sounds</div>
+      <span class="ps-cache-count" id="ps-cache-count">cache: 0</span>
+    </div>
+    <div id="ps-list"></div>
   </div>
 
   <div class="panel-section" id="panel-log" style="flex:1; overflow-y:auto; min-height:0; border-bottom:none;">
@@ -774,6 +813,10 @@ async function playSFX(soundPrompt, direction, vol=1.0) {
 
     // Show prompt below the radio
     showSFXLabel(soundPrompt, direction);
+    // Log to panel sounds list
+    addSoundEntry(soundPrompt, direction, 'live');
+    // Refresh ghost cache list so the new file becomes available
+    setTimeout(() => { ghostFetch().then(updateCacheCount); }, 4500);
 
   } catch(e) { console.warn('SFX fail:',e); }
 }
@@ -837,6 +880,9 @@ async function ghostPlay() {
     gain.gain.setTargetAtTime(0, now+dur-1.5, 1.0);
     src.start(); src.stop(now+dur+0.5);
     debugLine('ghost', file);
+    // Log to panel sounds list — show the filename (strip world prefix + timestamp)
+    const label = file.replace(/^[^-]+-\d+-?/, '').replace(/\.mp3$/, '') || file.replace(/\.mp3$/, '');
+    addSoundEntry(file, null, 'ghost');
   } catch(e) {}
 }
 
@@ -1462,8 +1508,10 @@ function initWorld(w){
   });
   if(S.running){ startAmbient(w); startMelody(w); startPad(w); }
   document.getElementById('pl-list').innerHTML = '';
+  const psl = document.getElementById('ps-list'); if (psl) psl.innerHTML = '';
   if (typeof updatePanelState   === 'function') updatePanelState();
   if (typeof updatePanelAgents  === 'function') updatePanelAgents();
+  if (typeof updateCacheCount   === 'function') updateCacheCount();
 }
 
 function startEngine(){
@@ -2122,9 +2170,51 @@ function escHtml(str) {
   return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// ── Sound entries ──────────────────────────────────────────
+const DIR_ARROW = { left:'←', right:'→', ahead:'↑', behind:'↓', above:'↑', 'all around':'·' };
+
+function addSoundEntry(text, direction, kind) {
+  const list = document.getElementById('ps-list');
+  if (!list) return;
+
+  const time = new Date().toTimeString().slice(0, 5);
+  const arrow = direction ? (DIR_ARROW[direction] ?? '·') : '↩';
+  const isFilename = kind === 'ghost';
+
+  const entry = document.createElement('div');
+  entry.className = 'sound-entry';
+  entry.innerHTML =
+    `<span class="se-time">${time}</span>` +
+    `<span class="se-kind ${kind}">${kind}</span>` +
+    `<span class="se-dir">${arrow}</span>` +
+    `<span class="se-text${isFilename ? ' filename' : ''}">${escHtml(text)}</span>`;
+  list.prepend(entry);
+
+  // Fade older entries, prune beyond 12
+  const all = list.querySelectorAll('.sound-entry');
+  all.forEach((el, i) => { if (i >= 3) el.classList.add('fading'); });
+  if (all.length > 12) all[all.length - 1].remove();
+}
+
+function updateCacheCount() {
+  const el = document.getElementById('ps-cache-count');
+  if (!el) return;
+  const total = GHOST.files.length;
+  const world = GHOST.files.filter(f => f.startsWith(S.world)).length;
+  el.textContent = `cache: ${world} this · ${total} total`;
+}
+
+// Refresh cache count whenever ghostFetch runs
+const _origGhostFetch = ghostFetch;
+ghostFetch = async function() {
+  await _origGhostFetch();
+  updateCacheCount();
+};
+
 // Initial panel render (world already selected at load)
 updatePanelState();
 updatePanelAgents();
+ghostFetch(); // populate cache count on load
 </script>
 </body>
 </html>
