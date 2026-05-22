@@ -686,6 +686,7 @@ let ctx, masterGain, ambGain;
 let noiseSource, noiseFilter, lfoNode, lfoGain;
 let noiseSource2, lfoNode2;
 let noiseChGain = null, melodyGain = null, sfxGain = null, padGain = null;
+let padFilter = null;   // shared tone bus — updated live as VIBE changes
 let padTimer = null;
 
 function buildNoise(type) {
@@ -737,6 +738,13 @@ function startAmbient(world) {
   padGain.gain.value = parseFloat(document.getElementById('mix-pad')?.value ?? 0.70);
   padGain.connect(masterGain);
 
+  // Shared pad tone bus — lowpass, updated continuously as VIBE changes
+  padFilter = ctx.createBiquadFilter();
+  padFilter.type = 'lowpass';
+  padFilter.frequency.value = 350;   // start dark, updatePadTone() will warm it
+  padFilter.Q.value = 0.55;
+  padFilter.connect(padGain);
+
   ambGain = ctx.createGain(); ambGain.gain.value=0; ambGain.connect(noiseChGain);
 
   noiseSource = buildNoise(p.noiseColor);
@@ -778,6 +786,7 @@ function stopAmbient() {
   if (noiseChGain) { noiseChGain.disconnect(); noiseChGain=null; }
   if (melodyGain)  { melodyGain.disconnect();  melodyGain=null; }
   if (sfxGain)     { sfxGain.disconnect();     sfxGain=null; }
+  if (padFilter)   { padFilter.disconnect();   padFilter=null; }
   if (padGain)     { padGain.disconnect();     padGain=null; }
 }
 
@@ -1005,6 +1014,9 @@ function updateVibe(ev) {
   for (const [k,v] of Object.entries(VIBE_TIME)) {
     if (tod.includes(k)) { VIBE.register += (v - VIBE.register) * 0.15; break; }
   }
+  // Animate pad brightness to match new vibe — fast snap (1.5s) on notable events
+  const fast = ev?.type === 'conflict' || ev?.type === 'interaction';
+  if (typeof updatePadTone === 'function') updatePadTone(fast ? 1.5 : 4.0);
 }
 
 function applyWeatherToVibe() {
@@ -1012,6 +1024,7 @@ function applyWeatherToVibe() {
   if (!wv) return;
   VIBE.register += (wv.register - VIBE.register) * 0.4;
   VIBE.tension  += (wv.tension  - VIBE.tension)  * 0.3;
+  if (typeof updatePadTone === 'function') updatePadTone(8.0); // slow weather drift
   if (lfoGain && ctx) {
     const base = WORLDS[S.world].ambient.lfo.depth;
     lfoGain.gain.setTargetAtTime(base * wv.lfoMult, ctx.currentTime, 10);
@@ -1178,60 +1191,82 @@ const PAD_CFG = {
             vol:0.032, fadeIn:5.0, hold:9.0, fadeOut:6.0, interval:[12,25] },
 };
 
+// ── Pad tone control — call whenever VIBE changes ──────────────
+function updatePadTone(transitionSecs) {
+  if (!padFilter || !ctx) return;
+  const tc = transitionSecs ?? 3.0;
+  // tension 0→1 maps filter 120Hz (subterranean dark) → 2200Hz (bright shimmer)
+  // use a power curve so changes at low tension feel dramatic
+  const freq = 120 + Math.pow(VIBE.tension, 0.65) * 2080;
+  padFilter.frequency.setTargetAtTime(freq, ctx.currentTime, tc / 3);
+}
+
 function playPad(world) {
-  if (!ctx || !padGain || !S.running) return;
+  if (!ctx || !padFilter || !S.running) return;
   const p = PAD_CFG[world]; if (!p) return;
 
-  // register maps VIBE into freq list (low register = low freq)
+  // register maps VIBE into freq list
   const fl = p.freqs.length;
   const center = Math.round((1 - VIBE.register) * (fl - 1));
   const offset = Math.floor((Math.random() - 0.5) * 3);
   const freq = p.freqs[Math.max(0, Math.min(fl - 1, center + offset))];
 
-  // occasional harmonic layering (fifth above at 40% vol)
-  const playHarmonic = Math.random() < 0.45;
+  // activity drives how many voices and how loud
+  const vol = p.vol * (0.7 + VIBE.activity * 0.55);
 
-  const voices = [{ f: freq, v: p.vol }];
-  if (playHarmonic) voices.push({ f: freq * 1.5, v: p.vol * 0.40 });
-  // tension adds a slight dissonant neighbour
-  if (VIBE.tension > 0.5) voices.push({ f: freq * Math.pow(2, 1/12), v: p.vol * 0.18 });
+  // voices: always fundamental; add fifth if active enough; add octave at high activity
+  const voices = [{ f: freq, v: vol }];
+  if (VIBE.activity > 0.25 || Math.random() < 0.4)
+    voices.push({ f: freq * 1.5,  v: vol * 0.38 });           // perfect fifth
+  if (VIBE.activity > 0.65)
+    voices.push({ f: freq * 2.0,  v: vol * 0.22 });           // octave above
+  if (VIBE.tension > 0.70)
+    voices.push({ f: freq * Math.pow(2, 7/12), v: vol * 0.20 }); // fifth (reinforced) adds density
+
+  // activity drives fade speed — tense/active moments breathe faster
+  const actMult = 0.4 + VIBE.activity * 1.2;
+  const fadeIn   = p.fadeIn  / actMult;
+  const hold     = p.hold    / (0.5 + VIBE.activity * 0.8);
+  const fadeOut  = p.fadeOut / actMult;
 
   voices.forEach(({ f, v }) => {
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.value = f;
 
-    // gentle lowpass — pads should be warm, not bright
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 600 + VIBE.tension * 400; lp.Q.value = 0.5;
-
     const env = ctx.createGain(); env.gain.value = 0;
     const now = ctx.currentTime;
-    env.gain.setTargetAtTime(v, now, p.fadeIn / 3);
-    env.gain.setTargetAtTime(v * 0.85, now + p.fadeIn, 1.0);       // slight settle
-    env.gain.setTargetAtTime(0.0001, now + p.fadeIn + p.hold, p.fadeOut / 3);
+    env.gain.setTargetAtTime(v, now, fadeIn / 3);
+    env.gain.setTargetAtTime(v * 0.82, now + fadeIn, 1.0);
+    env.gain.setTargetAtTime(0.0001, now + fadeIn + hold, fadeOut / 3);
 
-    osc.connect(lp); lp.connect(env); env.connect(padGain);
+    // route through shared padFilter (tone controlled globally)
+    osc.connect(env); env.connect(padFilter);
     osc.start(now);
-    osc.stop(now + p.fadeIn + p.hold + p.fadeOut + 0.5);
+    osc.stop(now + fadeIn + hold + fadeOut + 0.5);
   });
 }
 
 function schedulePad() {
   clearTimeout(padTimer);
   if (!S.running) return;
-  const p = PAD_CFG[S.world];
-  if (!p) return;
+  const p = PAD_CFG[S.world]; if (!p) return;
   const [iMin, iMax] = p.interval;
-  const delay = (iMin + Math.random() * (iMax - iMin)) * 1000;
+  // VIBE.activity shrinks the interval: calm = max wait, conflict = min wait
+  const t = iMax - (iMax - iMin) * Math.pow(VIBE.activity, 0.7);
+  const jitter = (Math.random() - 0.5) * (iMax - iMin) * 0.25;
+  const delay = Math.max(iMin, t + jitter) * 1000;
   padTimer = setTimeout(() => { playPad(S.world); schedulePad(); }, delay);
 }
 
 function startPad(world) {
   stopPad();
   if (!PAD_CFG[world]) return;
-  // first note after a short intro pause
-  padTimer = setTimeout(() => { playPad(world); schedulePad(); }, 3000 + Math.random() * 4000);
+  padTimer = setTimeout(() => {
+    updatePadTone(0.1);   // set initial tone immediately
+    playPad(world);
+    schedulePad();
+  }, 3000 + Math.random() * 4000);
 }
 
 function stopPad() { clearTimeout(padTimer); padTimer = null; }
@@ -2010,9 +2045,10 @@ document.getElementById('shake-btn').addEventListener('click', () => {
   // 4. Reactive melody burst — conflict level
   playReact({ type: 'conflict' });
 
-  // 5. VIBE jolt
+  // 5. VIBE jolt + instant pad brightness spike
   VIBE.activity = Math.min(1, VIBE.activity + 0.4);
   VIBE.tension  = Math.min(1, VIBE.tension  + 0.35);
+  updatePadTone(0.4);
 });
 
 // ═══════════════════════════════════════════════════════════
