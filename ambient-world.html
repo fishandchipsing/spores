@@ -1474,16 +1474,14 @@ async function fireEvent(){
     }
     updateVibe(ev);
     playReact(ev);
-    // Post-event phrase — probability and timing shaped by event type
-    const _phraseP = { conflict:0.65, interaction:0.55, shift:0.50, moment:0.30, residue:0.40, passing:0.20, distant:0.15 };
-    if (Math.random() < (_phraseP[ev.type] ?? 0.20)) {
-      const _phDelay = ev.type==='conflict'    ?  600+Math.random()*600  :
-                       ev.type==='interaction' ? 1000+Math.random()*1000 :
-                       ev.type==='shift'       ? 2000+Math.random()*2500 :
-                       ev.type==='residue'     ? 3000+Math.random()*2000 :
-                                                 1200+Math.random()*1800;
-      playEventPhrase(_phDelay);
-    }
+    // Every event triggers a phrase — timing shaped by type
+    const _phDelay = ev.type==='conflict'    ?  400+Math.random()*400  :
+                     ev.type==='interaction' ?  700+Math.random()*800  :
+                     ev.type==='shift'       ? 1500+Math.random()*2000 :
+                     ev.type==='residue'     ? 2500+Math.random()*1500 :
+                     ev.type==='moment'      ?  800+Math.random()*1200 :
+                                               1000+Math.random()*1500;
+    playEventPhrase(_phDelay);
     flashAgent(ev.agent, ev.agent_updates);
     updateClock();
     addPanelEntry(rawPrompt, rawResponse, ev);
