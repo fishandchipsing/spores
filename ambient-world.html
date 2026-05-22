@@ -161,8 +161,26 @@
   }
 
   /* ── Meta strip below pill ─────────────────────────────────── */
+  #sfx-display {
+    margin-top: 8px;
+    height: 14px;
+    font-size: 9px; letter-spacing: 0.06em;
+    color: var(--text);
+    display: flex; align-items: center; gap: 7px;
+    opacity: 0; transition: opacity 0.25s ease;
+    pointer-events: none;
+    max-width: 580px; overflow: hidden;
+  }
+  #sfx-display.visible { opacity: 1; }
+  .sfx-dir {
+    color: var(--muted); font-size: 8px; flex-shrink: 0;
+  }
+  #sfx-prompt {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
   #meta {
-    margin-top: 14px;
+    margin-top: 8px;
     font-size: 9px; color: var(--muted); letter-spacing: 0.08em;
     display: flex; gap: 12px; align-items: center;
   }
@@ -393,6 +411,11 @@
     <button id="start-btn">▶</button>
     <button id="shake-btn" title="shake the radio">⌇</button>
   </div>
+</div>
+
+<div id="sfx-display">
+  <span class="sfx-dir" id="sfx-dir">♪</span>
+  <span id="sfx-prompt"></span>
 </div>
 
 <div id="meta">
@@ -748,7 +771,27 @@ async function playSFX(soundPrompt, direction, vol=1.0) {
     sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
     sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
     src.start();
+
+    // Show prompt below the radio
+    showSFXLabel(soundPrompt, direction);
+
   } catch(e) { console.warn('SFX fail:',e); }
+}
+
+let _sfxLabelTimer = null;
+function showSFXLabel(prompt, direction) {
+  const wrap = document.getElementById('sfx-display');
+  const dirEl = document.getElementById('sfx-dir');
+  const textEl = document.getElementById('sfx-prompt');
+  if (!wrap || !textEl) return;
+
+  const dirSymbol = { left:'←', right:'→', ahead:'↑', behind:'↓', above:'↑', 'all around':'·' }[direction] ?? '·';
+  dirEl.textContent = dirSymbol;
+  textEl.textContent = prompt;
+
+  wrap.classList.add('visible');
+  clearTimeout(_sfxLabelTimer);
+  _sfxLabelTimer = setTimeout(() => wrap.classList.remove('visible'), 3800);
 }
 
 function playSounds(sounds, direction) {
