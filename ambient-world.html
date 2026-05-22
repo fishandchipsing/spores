@@ -1699,7 +1699,7 @@ function scheduleEpoch() {
   clearTimeout(S.arc.epochTimer);
   clearInterval(_epochBarInterval);
   if (!S.running) return;
-  _epochDuration = (5 + Math.random() * 4) * 60 * 1000; // 5–9 min
+  _epochDuration = (1 + Math.random() * 2) * 60 * 1000; // 1–3 min
   _epochStart = Date.now();
   // Animate the epoch progress bar
   _epochBarInterval = setInterval(() => {
