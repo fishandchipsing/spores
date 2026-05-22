@@ -1193,6 +1193,27 @@ function playPhrase(world) {
   melodyTimer = setTimeout(() => { if (S.running) playPhrase(S.world); }, t + wait);
 }
 
+// Anticipatory hint — 1-2 quiet notes fired a few seconds before an event
+function playAnticipatory() {
+  if (!ctx || !masterGain || !S.running) return;
+  const m = MELODY_CFG[S.world]; if (!m) return;
+  if (Math.random() < 0.45) return; // skip 45% of the time — keep it rare
+  const fl = m.freqs.length;
+  const center = Math.round(VIBE.register * (fl - 1));
+  const freq = m.freqs[Math.max(0, Math.min(fl-1, center + Math.round((Math.random()-0.5)*2)))];
+  playNote(S.world, freq, (m.relLong ?? 2.5) * 0.65); // longer, softer
+  if (Math.random() < 0.45) {
+    const freq2 = m.freqs[Math.max(0, Math.min(fl-1, center + Math.round((Math.random()-0.5)*3)))];
+    setTimeout(() => { if (S.running) playNote(S.world, freq2, m.relShort ?? 0.4); }, 500 + Math.random()*400);
+  }
+}
+
+// Event-triggered phrase — resets melody timer so the phrase feels like a response
+function playEventPhrase(delayMs) {
+  clearTimeout(melodyTimer);
+  melodyTimer = setTimeout(() => { if (S.running) playPhrase(S.world); }, delayMs);
+}
+
 // Reactive accent — only on significant events, 1-2 harmonic notes
 function playReact(ev) {
   if (!ctx || !masterGain || !S.running) return;
@@ -1423,6 +1444,8 @@ function scheduleNext(){
   if(!S.running) return;
   const delay=nextDelay(); S.nextAt=Date.now()+delay;
   if(delay>14000) setTimeout(()=>{ if(S.running) addSilence(); },1800);
+  // Anticipatory notes: fire 3-5s before the event when there's enough lead time
+  if(delay>8000) setTimeout(()=>{ if(S.running) playAnticipatory(); }, delay-(3000+Math.random()*2000));
   S.nextTimeout=setTimeout(async()=>{
     if(!S.running) return;
     const p=phase(); const n=Math.random()<p.clusterP?p.clusterN:1;
@@ -1451,6 +1474,16 @@ async function fireEvent(){
     }
     updateVibe(ev);
     playReact(ev);
+    // Post-event phrase — probability and timing shaped by event type
+    const _phraseP = { conflict:0.65, interaction:0.55, shift:0.50, moment:0.30, residue:0.40, passing:0.20, distant:0.15 };
+    if (Math.random() < (_phraseP[ev.type] ?? 0.20)) {
+      const _phDelay = ev.type==='conflict'    ?  600+Math.random()*600  :
+                       ev.type==='interaction' ? 1000+Math.random()*1000 :
+                       ev.type==='shift'       ? 2000+Math.random()*2500 :
+                       ev.type==='residue'     ? 3000+Math.random()*2000 :
+                                                 1200+Math.random()*1800;
+      playEventPhrase(_phDelay);
+    }
     flashAgent(ev.agent, ev.agent_updates);
     updateClock();
     addPanelEntry(rawPrompt, rawResponse, ev);
