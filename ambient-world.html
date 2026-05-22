@@ -227,6 +227,123 @@
 
   /* hidden utility elements */
   #event-log, #agents-strip, #pulse { display: none; }
+
+  /* ── Side panel ───────────────────────────────────────────── */
+  #panel-toggle {
+    position: fixed; top: 50%; right: 320px;
+    transform: translateY(-50%);
+    width: 18px; height: 44px;
+    background: #0f0f0d; border: 1px solid #1e1e1a; border-right: none;
+    border-radius: 4px 0 0 4px;
+    cursor: pointer; z-index: 201;
+    color: var(--muted); font-size: 8px; font-family: inherit;
+    display: flex; align-items: center; justify-content: center;
+    transition: right 0.3s ease, color 0.2s;
+  }
+  #panel-toggle:hover { color: var(--accent); }
+  #panel-toggle.closed { right: 0; }
+
+  #side-panel {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 320px;
+    background: #0d0d0b;
+    border-left: 1px solid #1a1a16;
+    display: flex; flex-direction: column;
+    z-index: 200;
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+    overflow: hidden;
+  }
+  #side-panel.closed { transform: translateX(320px); }
+
+  .panel-section {
+    border-bottom: 1px solid #161613;
+    padding: 12px 14px;
+    flex-shrink: 0;
+  }
+  .panel-head {
+    font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 8px; opacity: 0.6;
+  }
+  .panel-kv {
+    display: flex; gap: 6px; margin-bottom: 3px; align-items: baseline;
+  }
+  .panel-k {
+    font-size: 9px; color: var(--muted); opacity: 0.55;
+    min-width: 52px; flex-shrink: 0;
+  }
+  .panel-v {
+    font-size: 9px; color: var(--text); letter-spacing: 0.04em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* vibe bars */
+  .vibe-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .vk { font-size: 9px; color: var(--muted); opacity: 0.55; min-width: 52px; }
+  .vbar-wrap { flex: 1; height: 2px; background: #1a1a16; border-radius: 1px; overflow: hidden; }
+  .vbar { height: 100%; background: var(--text); border-radius: 1px; width: 0%; transition: width 0.6s ease; }
+  .vv { font-size: 8px; color: var(--muted); min-width: 26px; text-align: right; }
+
+  /* agents list */
+  #panel-agents { max-height: 160px; overflow-y: auto; }
+  #panel-agents::-webkit-scrollbar { width: 2px; }
+  #panel-agents::-webkit-scrollbar-thumb { background: var(--muted); }
+  .pa-row {
+    display: flex; gap: 8px; margin-bottom: 4px; align-items: baseline;
+    font-size: 9px; line-height: 1.5;
+  }
+  .pa-name { color: var(--text); min-width: 72px; flex-shrink: 0; }
+  .pa-state { color: var(--muted); overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pa-row.lit .pa-name { color: var(--accent); }
+
+  /* log */
+  #panel-log { flex: 1; overflow-y: auto; min-height: 0; }
+  #panel-log::-webkit-scrollbar { width: 2px; }
+  #panel-log::-webkit-scrollbar-thumb { background: var(--muted); }
+  #pl-list { padding: 0 14px 12px; }
+
+  .pl-entry {
+    border-bottom: 1px solid #131311;
+    padding: 10px 0 8px;
+    font-size: 9px; line-height: 1.6;
+  }
+  .pl-entry:last-child { border-bottom: none; }
+  .pl-header { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
+  .pl-time { color: var(--muted); opacity: 0.5; }
+  .pl-type {
+    font-size: 7px; letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 2px; background: #1a1a16; color: var(--muted);
+  }
+  .pl-type.moment  { background: #1a1e14; color: #7a9a5a; }
+  .pl-type.conflict{ background: #1e1414; color: #9a6060; }
+  .pl-type.interaction{ background: #14181e; color: #5a7a9a; }
+  .pl-type.shift   { background: #1a1a14; color: #9a9a60; }
+  .pl-type.passing { background: #161616; color: #6a6a6a; }
+  .pl-type.distant { background: #131313; color: #555555; }
+  .pl-type.residue { background: #141318; color: #7a6a8a; }
+  .pl-agent { color: var(--accent); font-size: 9px; }
+  .pl-desc { color: var(--text); margin-bottom: 6px; line-height: 1.55; }
+  .pl-sounds { color: var(--muted); font-style: italic; margin-bottom: 5px; font-size: 8px; }
+
+  .pl-expand {
+    background: none; border: none; cursor: pointer;
+    font-family: inherit; font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); padding: 0; opacity: 0.5; margin-right: 12px;
+    transition: opacity 0.2s;
+  }
+  .pl-expand:hover { opacity: 0.9; color: var(--text); }
+  .pl-detail {
+    display: none; margin-top: 6px;
+    background: #0f0f0d; border: 1px solid #161613;
+    border-radius: 3px; padding: 8px;
+    color: var(--muted); font-size: 8px; line-height: 1.65;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 240px; overflow-y: auto;
+  }
+  .pl-detail.open { display: block; }
+  .pl-detail::-webkit-scrollbar { width: 2px; }
+  .pl-detail::-webkit-scrollbar-thumb { background: var(--muted); }
 </style>
 </head>
 <body>
@@ -316,6 +433,49 @@
 </div>
 
 <button id="settings-toggle">· · ·</button>
+
+<!-- ── Side panel ─────────────────────────────────────── -->
+<button id="panel-toggle" title="toggle info panel">◂</button>
+<div id="side-panel">
+
+  <div class="panel-section">
+    <div class="panel-head">state</div>
+    <div class="panel-kv"><span class="panel-k">world</span><span class="panel-v" id="ps-world">—</span></div>
+    <div class="panel-kv"><span class="panel-k">weather</span><span class="panel-v" id="ps-weather">—</span></div>
+    <div class="panel-kv"><span class="panel-k">time</span><span class="panel-v" id="ps-time">—</span></div>
+    <div class="panel-kv"><span class="panel-k">events</span><span class="panel-v" id="ps-events">0</span></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-head">vibe</div>
+    <div class="vibe-row">
+      <span class="vk">activity</span>
+      <div class="vbar-wrap"><div class="vbar" id="vb-activity"></div></div>
+      <span class="vv" id="vv-activity">0.0</span>
+    </div>
+    <div class="vibe-row">
+      <span class="vk">tension</span>
+      <div class="vbar-wrap"><div class="vbar" id="vb-tension"></div></div>
+      <span class="vv" id="vv-tension">0.0</span>
+    </div>
+    <div class="vibe-row">
+      <span class="vk">register</span>
+      <div class="vbar-wrap"><div class="vbar" id="vb-register"></div></div>
+      <span class="vv" id="vv-register">0.0</span>
+    </div>
+  </div>
+
+  <div class="panel-section" id="panel-agents">
+    <div class="panel-head">agents</div>
+    <div id="pa-list"></div>
+  </div>
+
+  <div class="panel-section" id="panel-log" style="flex:1; overflow-y:auto; min-height:0; border-bottom:none;">
+    <div class="panel-head" style="padding: 0; margin-bottom:0;">log</div>
+    <div id="pl-list"></div>
+  </div>
+
+</div>
 
 <!-- Hidden utility elements needed by JS -->
 <div style="display:none" aria-hidden="true">
@@ -1099,7 +1259,9 @@ sounds: 1 required, 2 and 3 optional. Spread sounds across 0–4 seconds. No sou
   });
   if (!res.ok) throw new Error(`${res.status}`);
   const data = await res.json();
-  return JSON.parse(data.content[0].text.trim().replace(/```json|```/g,'').trim());
+  const rawText = data.content[0].text.trim().replace(/```json|```/g,'').trim();
+  const ev = JSON.parse(rawText);
+  return { ev, rawPrompt: prompt, rawResponse: rawText };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1124,7 +1286,7 @@ function scheduleNext(){
 async function fireEvent(){
   ripple(); setStatus('—');
   try {
-    const ev=await callClaude();
+    const { ev, rawPrompt, rawResponse } = await callClaude();
     if(ev.agent_updates){ for(const [id,st] of Object.entries(ev.agent_updates)) S.agentStates[id]=st; }
     addEventRow(ev);
     S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
@@ -1133,6 +1295,9 @@ async function fireEvent(){
     playReact(ev);
     flashAgent(ev.agent, ev.agent_updates);
     updateClock();
+    addPanelEntry(rawPrompt, rawResponse, ev);
+    updatePanelAgents();
+    updatePanelState();
     if(ev.sounds) playSounds(ev.sounds, ev.direction);
     else if(ev.sound_prompt) playSFX(ev.sound_prompt, ev.direction).catch(()=>{});
   } catch(e){ console.warn('event failed:',e); setStatus('retry…'); }
@@ -1245,6 +1410,9 @@ function initWorld(w){
     VIEW.wobble[a.id] = 0; VIEW.age[a.id] = 0; VIEW.tailHist[a.id] = [];
   });
   if(S.running){ startAmbient(w); startMelody(w); startPad(w); }
+  document.getElementById('pl-list').innerHTML = '';
+  if (typeof updatePanelState   === 'function') updatePanelState();
+  if (typeof updatePanelAgents  === 'function') updatePanelAgents();
 }
 
 function startEngine(){
@@ -1781,6 +1949,131 @@ document.getElementById('shake-btn').addEventListener('click', () => {
   VIBE.activity = Math.min(1, VIBE.activity + 0.4);
   VIBE.tension  = Math.min(1, VIBE.tension  + 0.35);
 });
+
+// ═══════════════════════════════════════════════════════════
+// SIDE PANEL
+// ═══════════════════════════════════════════════════════════
+let panelOpen = true;
+
+function panelApplyState() {
+  document.getElementById('side-panel').classList.toggle('closed', !panelOpen);
+  const tog = document.getElementById('panel-toggle');
+  tog.classList.toggle('closed', !panelOpen);
+  tog.textContent = panelOpen ? '▸' : '◂';
+  if (panelOpen) tog.style.right = '320px';
+  else           tog.style.right = '0px';
+}
+document.getElementById('panel-toggle').addEventListener('click', () => {
+  panelOpen = !panelOpen;
+  panelApplyState();
+});
+panelApplyState();
+
+function updatePanelState() {
+  const el = id => document.getElementById(id);
+  el('ps-world').textContent   = S.world   || '—';
+  el('ps-weather').textContent = S.weather || '—';
+  el('ps-time').textContent    = S.timeOfDay || '—';
+  el('ps-events').textContent  = S.eventCount || 0;
+}
+
+// Vibe bars update on a smooth interval
+setInterval(() => {
+  const set = (barId, valId, v) => {
+    const bar = document.getElementById(barId);
+    const val = document.getElementById(valId);
+    if (bar) bar.style.width = (v * 100).toFixed(1) + '%';
+    if (val) val.textContent  = v.toFixed(2);
+  };
+  set('vb-activity', 'vv-activity', VIBE.activity);
+  set('vb-tension',  'vv-tension',  VIBE.tension);
+  set('vb-register', 'vv-register', VIBE.register);
+}, 400);
+
+function updatePanelAgents() {
+  const list = document.getElementById('pa-list');
+  if (!list || !S.world) return;
+  const agents = WORLDS[S.world]?.agents || [];
+  list.innerHTML = agents.map(a => {
+    const state = S.agentStates[a.id] || a.state || '—';
+    return `<div class="pa-row" id="par-${a.id}">
+      <span class="pa-name">${a.label}</span>
+      <span class="pa-state">${state}</span>
+    </div>`;
+  }).join('');
+}
+
+function flashPanelAgent(agentLabel) {
+  if (!agentLabel || !S.world) return;
+  const agents = WORLDS[S.world]?.agents || [];
+  const a = agents.find(a => a.label.toLowerCase() === agentLabel.toLowerCase());
+  if (!a) return;
+  const row = document.getElementById('par-' + a.id);
+  if (!row) return;
+  row.classList.add('lit');
+  setTimeout(() => row.classList.remove('lit'), 2500);
+}
+
+function addPanelEntry(rawPrompt, rawResponse, ev) {
+  const list = document.getElementById('pl-list');
+  if (!list) return;
+
+  const time  = new Date().toTimeString().slice(0, 5);
+  const type  = ev.type || 'moment';
+  const agent = ev.agent || '';
+  const desc  = ev.description || '';
+
+  // Sounds summary
+  let soundsHtml = '';
+  if (ev.sounds && ev.sounds.length) {
+    const lines = ev.sounds.map(s =>
+      `<span style="opacity:0.45">${(s.delay||0)/1000}s</span> ${s.prompt}`
+    ).join('<br>');
+    soundsHtml = `<div class="pl-sounds">${lines}</div>`;
+  }
+
+  // Unique id for expand targets
+  const uid = 'ple' + Date.now();
+
+  const entry = document.createElement('div');
+  entry.className = 'pl-entry';
+  entry.innerHTML = `
+    <div class="pl-header">
+      <span class="pl-time">${time}</span>
+      <span class="pl-type ${type}">${type}</span>
+      <span class="pl-agent">${agent}</span>
+    </div>
+    <div class="pl-desc">${desc}</div>
+    ${soundsHtml}
+    <div>
+      <button class="pl-expand" onclick="toggleDetail('${uid}-p')">prompt ▾</button>
+      <button class="pl-expand" onclick="toggleDetail('${uid}-r')">response ▾</button>
+    </div>
+    <div class="pl-detail" id="${uid}-p">${escHtml(rawPrompt)}</div>
+    <div class="pl-detail" id="${uid}-r">${escHtml(rawResponse)}</div>
+  `;
+  list.prepend(entry);
+
+  // Prune to last 20 entries
+  const entries = list.querySelectorAll('.pl-entry');
+  if (entries.length > 20) entries[entries.length - 1].remove();
+
+  // Flash the agent row
+  flashPanelAgent(agent);
+}
+
+function toggleDetail(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Initial panel render (world already selected at load)
+updatePanelState();
+updatePanelAgents();
 </script>
 </body>
 </html>
