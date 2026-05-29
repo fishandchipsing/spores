@@ -195,6 +195,22 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
+  /* ── SFX effect buttons ────────────────────────────────────── */
+  #sfx-fx-row {
+    display: flex; gap: 7px; margin-top: 10px;
+    height: 20px; align-items: center;
+  }
+  .fx-btn {
+    background: none; border: 1px solid var(--muted);
+    color: var(--muted); font-family: inherit; font-size: 9px;
+    font-weight: 300; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 2px 9px 3px; border-radius: 10px; cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    line-height: 1;
+  }
+  .fx-btn:hover { border-color: var(--text); color: var(--text); }
+  .fx-btn.active { border-color: var(--accent); color: var(--accent); }
+
   #meta {
     margin-top: 8px;
     font-size: 9px; color: var(--muted); letter-spacing: 0.08em;
@@ -500,6 +516,13 @@
 <div id="sfx-display">
   <span class="sfx-dir" id="sfx-dir">♪</span>
   <span id="sfx-prompt"></span>
+</div>
+
+<div id="sfx-fx-row">
+  <button class="fx-btn" data-fx="reverb"   title="room reverb — enclosed, boxy">reverb</button>
+  <button class="fx-btn" data-fx="vocoder"  title="ring modulator — metallic, tonal">vocoder</button>
+  <button class="fx-btn" data-fx="granular" title="granular scatter — dissolves into texture">granular</button>
+  <button class="fx-btn" data-fx="lofi"     title="lo-fi tape — bitcrushed, degraded, warm">lo-fi</button>
 </div>
 
 <div id="meta">
@@ -858,6 +881,7 @@ function stopAmbient() {
   if (sfxGain)     { sfxGain.disconnect();     sfxGain=null; }
   if (padFilter)   { padFilter.disconnect();   padFilter=null; }
   if (padGain)     { padGain.disconnect();     padGain=null; }
+  _sfxConvolver = null; // invalidate shared reverb IR
 }
 
 document.getElementById('vol-slider').addEventListener('input', e => {
@@ -905,6 +929,145 @@ function findCachedMatch(prompt) {
   return bestScore >= 1.5 ? best : null;
 }
 
+// ═══════════════════════════════════════════════════════════
+// SFX EFFECTS
+// ═══════════════════════════════════════════════════════════
+const SFX_FX = { reverb: false, vocoder: false, granular: false, lofi: false };
+
+let _sfxConvolver = null; // shared, recreated on world switch
+
+function _getConvolver() {
+  if (_sfxConvolver) return _sfxConvolver;
+  _sfxConvolver = ctx.createConvolver();
+  // Room IR: 1.4s exponential noise decay, stereo
+  const sr = ctx.sampleRate, len = Math.floor(sr * 1.4);
+  const ir = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++)
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6)
+             * (ch === 1 ? 0.93 : 1); // slight stereo asymmetry
+  }
+  _sfxConvolver.buffer = ir;
+  return _sfxConvolver;
+}
+
+function _lofiCurve(n = 256) {
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2 / n) - 1;
+    // soft clip + slight quantisation crunch
+    c[i] = (Math.PI + 180) * x / (Math.PI + 180 * Math.abs(x));
+  }
+  return c;
+}
+
+// Build effect chain starting from srcNode, return { out, cleanup }
+// Cleanup stops any oscillators started by effects.
+function _buildFxChain(srcNode, bufDuration) {
+  let node = srcNode;
+  const toStop = [];
+
+  // ── base lowpass (tighter for lo-fi) ──────────────────────
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = SFX_FX.lofi ? 1050 : 900;
+  lp.Q.value         = SFX_FX.lofi ? 1.6  : 0.7;
+  node.connect(lp); node = lp;
+
+  // ── lo-fi: soft-clip + wow flutter ────────────────────────
+  if (SFX_FX.lofi) {
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = _lofiCurve(); shaper.oversample = '2x';
+
+    // Wow: slow LFO ±3% gain wobble
+    const wowLfo   = ctx.createOscillator();
+    wowLfo.type = 'sine';
+    wowLfo.frequency.value = 2.1 + Math.random() * 1.2;
+    const wowDepth = ctx.createGain(); wowDepth.gain.value = 0.03;
+    const wowBias  = ctx.createGain(); wowBias.gain.value  = 1.0;
+    wowLfo.connect(wowDepth); wowDepth.connect(wowBias.gain);
+    wowLfo.start(); toStop.push(wowLfo);
+
+    node.connect(shaper); shaper.connect(wowBias); node = wowBias;
+  }
+
+  // ── reverb: convolution wet/dry ───────────────────────────
+  if (SFX_FX.reverb) {
+    const conv = _getConvolver();
+    const dry  = ctx.createGain(); dry.gain.value = 0.42;
+    const wet  = ctx.createGain(); wet.gain.value = 0.68;
+    const mix  = ctx.createGain(); mix.gain.value = 1.0;
+    node.connect(dry); dry.connect(mix);
+    node.connect(conv); conv.connect(wet); wet.connect(mix);
+    node = mix;
+  }
+
+  // ── vocoder: ring modulator ────────────────────────────────
+  if (SFX_FX.vocoder) {
+    // Amplitude-modulate signal by an oscillator → sum/difference sidebands
+    const rg  = ctx.createGain(); rg.gain.value = 0;
+    const osc = ctx.createOscillator();
+    const worldFreq = { water: 174, forest: 207, city: 440 };
+    osc.frequency.value = (worldFreq[S.world] || 220) * (0.96 + Math.random() * 0.08);
+    osc.type = 'sine';
+    osc.connect(rg.gain); // oscillator modulates gain
+    node.connect(rg);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+    rg.connect(hp);
+    osc.start(); osc.stop(ctx.currentTime + (bufDuration || 4) + 0.5);
+    node = hp;
+  }
+
+  return {
+    out: node,
+    cleanup: () => toStop.forEach(n => { try { n.stop(); } catch(e){} }),
+  };
+}
+
+// Granular: scatter source buffer as ~36 short grains over ~3.5s
+function _playGranular(buf, panVal, vol, dest) {
+  if (!ctx || !buf) return;
+  const masterG = ctx.createGain(); masterG.gain.value = 0;
+  const now = ctx.currentTime;
+  masterG.gain.setTargetAtTime(vol, now, 0.14);
+  masterG.gain.setTargetAtTime(0, now + 3.8, 0.65);
+
+  let out = masterG;
+  if (SFX_FX.reverb) {
+    const conv = _getConvolver();
+    const dry = ctx.createGain(); dry.gain.value = 0.5;
+    const wet = ctx.createGain(); wet.gain.value = 0.55;
+    const mix = ctx.createGain();
+    masterG.connect(dry); dry.connect(mix);
+    masterG.connect(conv); conv.connect(wet); wet.connect(mix);
+    out = mix;
+  }
+  out.connect(dest);
+
+  const numGrains = 30 + Math.floor(Math.random() * 14);
+  const spread    = 3.4;
+  for (let i = 0; i < numGrains; i++) {
+    const offset    = Math.random() * Math.max(0.01, buf.duration - 0.1);
+    const grainDur  = 0.028 + Math.random() * 0.095; // 28–123 ms
+    const grainTime = now + (i / numGrains) * spread * (0.35 + Math.random() * 1.3);
+
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g   = ctx.createGain();         g.gain.value = 0;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-1, Math.min(1, panVal + (Math.random() * 0.55 - 0.27)));
+
+    src.connect(g); g.connect(pan); pan.connect(masterG);
+
+    // Hann-style envelope on each grain
+    g.gain.setValueAtTime(0, grainTime);
+    g.gain.linearRampToValueAtTime(0.65 + Math.random() * 0.35, grainTime + grainDur * 0.38);
+    g.gain.linearRampToValueAtTime(0, grainTime + grainDur);
+
+    src.start(grainTime, offset, grainDur);
+  }
+}
+
 // Play a cached file through the SFX audio chain (not the ghost chain)
 async function playCachedSFX(filename, direction, vol) {
   const res = await fetch(`/sfx-cache/${encodeURIComponent(filename)}`);
@@ -913,17 +1076,25 @@ async function playCachedSFX(filename, direction, vol) {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') ctx.resume();
   const buf = await ctx.decodeAudioData(ab);
-  const src = ctx.createBufferSource(); src.buffer = buf;
-  const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=900; lp.Q.value=0.7;
-  const pan = ctx.createStereoPanner();
-  pan.pan.value = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction] ?? 0;
-  const sg  = ctx.createGain(); sg.gain.value = 0;
-  src.connect(lp); lp.connect(pan); pan.connect(sg);
-  sg.connect(sfxGain || masterGain || ctx.destination);
-  const st = ctx.currentTime;
-  sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
-  sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
-  src.start();
+
+  const panVal = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction] ?? 0;
+  const dest   = sfxGain || masterGain || ctx.destination;
+
+  if (SFX_FX.granular) {
+    _playGranular(buf, panVal, 0.55 * vol, dest);
+  } else {
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const { out, cleanup } = _buildFxChain(src, buf.duration);
+    const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
+    const sg  = ctx.createGain();         sg.gain.value = 0;
+    out.connect(pan); pan.connect(sg); sg.connect(dest);
+    const st = ctx.currentTime;
+    sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
+    sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
+    src.start();
+    setTimeout(cleanup, (buf.duration + 1.2) * 1000);
+  }
+
   const label = filenameToLabel(filename);
   showSFXLabel(label, direction);
   addSoundEntry(filename, direction, 'cache');
@@ -953,16 +1124,23 @@ async function playSFX(soundPrompt, direction, vol=1.0) {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state==='suspended') ctx.resume();
     const buf = await ctx.decodeAudioData(ab);
-    const src = ctx.createBufferSource(); src.buffer=buf;
-    const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=900; lp.Q.value=0.7;
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction]??0;
-    const sg  = ctx.createGain(); sg.gain.value = 0;
-    src.connect(lp); lp.connect(pan); pan.connect(sg); sg.connect(sfxGain||masterGain||ctx.destination);
-    const st = ctx.currentTime;
-    sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
-    sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
-    src.start();
+    const panVal = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction] ?? 0;
+    const dest   = sfxGain || masterGain || ctx.destination;
+
+    if (SFX_FX.granular) {
+      _playGranular(buf, panVal, 0.55 * vol, dest);
+    } else {
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const { out, cleanup } = _buildFxChain(src, buf.duration);
+      const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
+      const sg  = ctx.createGain();         sg.gain.value = 0;
+      out.connect(pan); pan.connect(sg); sg.connect(dest);
+      const st = ctx.currentTime;
+      sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
+      sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
+      src.start();
+      setTimeout(cleanup, (buf.duration + 1.2) * 1000);
+    }
 
     // Show prompt below the radio
     showSFXLabel(soundPrompt, direction);
@@ -2692,6 +2870,17 @@ document.getElementById('shake-btn').addEventListener('click', () => {
         addSoundEntry(file, 'all around', 'shake');
       }).catch(() => {});
   }
+});
+
+// ── SFX effect toggle buttons ─────────────────────────────────────
+document.querySelectorAll('.fx-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const fx = btn.dataset.fx;
+    SFX_FX[fx] = !SFX_FX[fx];
+    btn.classList.toggle('active', SFX_FX[fx]);
+    // Rebuild reverb IR next time it's needed
+    if (fx === 'reverb') _sfxConvolver = null;
+  });
 });
 
 // ═══════════════════════════════════════════════════════════
