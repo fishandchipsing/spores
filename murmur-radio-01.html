@@ -1071,6 +1071,9 @@ async function playCachedSFX(filename, direction, vol) {
     setTimeout(cleanup, (buf.duration + 1.2) * 1000);
   }
 
+  // Shadow phrase timed to this buffer
+  tryShadowPhrase(buf.duration, direction);
+
   const label = filenameToLabel(filename);
   showSFXLabel(label, direction);
   addSoundEntry(filename, direction, 'cache');
@@ -1117,6 +1120,9 @@ async function playSFX(soundPrompt, direction, vol=1.0) {
       src.start();
       setTimeout(cleanup, (buf.duration + 1.2) * 1000);
     }
+
+    // Shadow phrase timed to this buffer
+    tryShadowPhrase(buf.duration, direction);
 
     // Show prompt below the radio
     showSFXLabel(soundPrompt, direction);
@@ -1326,8 +1332,9 @@ function _panVal(direction) {
   return ({left:-0.55, right:0.55, ahead:0, behind:0, above:0, 'all around':0})[direction] ?? 0;
 }
 
-// Spawn a single tone through shadowGain, auto-releases
-function _shadowTone(freq, vol, atkSec, decaySec, panVal, wave='sine') {
+// Spawn a single tone through shadowGain, auto-releases.
+// startAt defaults to ctx.currentTime; pass a future time to schedule ahead.
+function _shadowTone(freq, vol, atkSec, decaySec, panVal, wave='sine', startAt=null) {
   if (!ctx || !shadowGain) return;
   const osc = ctx.createOscillator();
   osc.type = wave;
@@ -1335,11 +1342,11 @@ function _shadowTone(freq, vol, atkSec, decaySec, panVal, wave='sine') {
   const env = ctx.createGain(); env.gain.value = 0;
   const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
   osc.connect(env); env.connect(pan); pan.connect(shadowGain);
-  const now = ctx.currentTime;
-  env.gain.setTargetAtTime(vol, now, atkSec / 3);
-  env.gain.setTargetAtTime(0.0001, now + atkSec + decaySec * 0.1, decaySec / 3);
-  osc.start(now);
-  osc.stop(now + atkSec + decaySec + 1.0);
+  const t = startAt ?? ctx.currentTime;
+  env.gain.setTargetAtTime(vol, t, atkSec / 3);
+  env.gain.setTargetAtTime(0.0001, t + atkSec + decaySec * 0.1, decaySec / 3);
+  osc.start(t);
+  osc.stop(t + atkSec + decaySec + 1.0);
 }
 
 // BLOOM — resonant chord of world partials, like a brief singing bowl
@@ -1474,6 +1481,119 @@ function playShadow(ev) {
     }
     debugLine('shadow', ev.type + ' · ' + dir);
   }, delay);
+}
+
+// ── Shadow phrase — rhythmically aligned with the SFX buffer ────────
+// Called from playSFX / playCachedSFX once the audio buffer is decoded.
+// Plays 2-4 notes from the current harmony chord, spread across the SFX
+// duration, with a phrase shape that mirrors the event type.
+
+let _shadowEvCtx = null;       // set by fireEvent, consumed by first SFX decode
+let _shadowFallbackTimer = null;
+
+// Entry point from fireEvent (stores context for the SFX decode hooks)
+function armShadow(ev) {
+  clearTimeout(_shadowFallbackTimer);
+  _shadowEvCtx = ev;
+  // Fallback: if no SFX buffer arrives within 2 s (EL off, or event has no sound),
+  // fire the original single-note shadow so the layer still responds.
+  _shadowFallbackTimer = setTimeout(() => {
+    if (_shadowEvCtx === ev) { _shadowEvCtx = null; playShadow(ev); }
+  }, 2000);
+}
+
+// Called by playSFX / playCachedSFX when buf.duration is known
+function tryShadowPhrase(bufDuration, direction) {
+  if (!_shadowEvCtx) return;
+  const ev = _shadowEvCtx; _shadowEvCtx = null;
+  clearTimeout(_shadowFallbackTimer);
+  playShadowPhrase(bufDuration, direction, ev.type);
+}
+
+function playShadowPhrase(bufDuration, direction, evType) {
+  if (!ctx || !shadowGain || !S.running) return;
+  if (Math.random() < 0.10) return; // occasional silence
+
+  const { tension, register } = VIBE;
+  const pan0   = _panVal(direction || 'all around');
+  const bVol   = 0.18 + register * 0.08; // softer than standalone shadow — complement the SFX
+  const now    = ctx.currentTime;
+  const d      = Math.max(0.8, bufDuration); // guard against very short files
+
+  // Notes pulled from the active harmony chord (always in key)
+  const midis  = _getHarmMidis(_harmCurrent);
+  const hFreqs = midis.map(m => _harmMidiToHz(m));
+  const root2  = hFreqs[0] * 0.5; // octave-down root for grounding
+
+  // Phrase definitions — { t (sec offset), freq, vol, decay }
+  let notes;
+  switch (evType) {
+    case 'moment':
+      // Ascending 3-note figure: root → third → fifth
+      notes = [
+        { t: 0,      freq: hFreqs[0], vol: 1.00, decay: 0.7 },
+        { t: d*0.35, freq: hFreqs[1], vol: 0.85, decay: 0.6 },
+        { t: d*0.65, freq: hFreqs[2], vol: 0.70, decay: 1.3 },
+      ];
+      break;
+    case 'interaction':
+      // Call (2 quick notes) + response (1 long note after a gap)
+      notes = [
+        { t: 0,      freq: hFreqs[1], vol: 1.00, decay: 0.45 },
+        { t: d*0.20, freq: hFreqs[2], vol: 0.90, decay: 0.35 },
+        { t: d*0.60, freq: hFreqs[0], vol: 0.75, decay: 1.5  },
+      ];
+      break;
+    case 'conflict':
+      // Tight semitone clash → soft resolution
+      notes = [
+        { t: 0,      freq: hFreqs[0],                        vol: 1.00, decay: 0.35 },
+        { t: 0.11,   freq: hFreqs[0] * Math.pow(2, 1/12),   vol: 0.88, decay: 0.28 },
+        { t: d*0.52, freq: hFreqs[2],                        vol: 0.65, decay: 1.1  },
+      ];
+      break;
+    case 'shift':
+      // Sweep up through all chord tones
+      notes = hFreqs.slice(0, 4).map((f, i) => ({
+        t: i * (d / 4.8), freq: f, vol: 1.0 - i * 0.13, decay: 0.5 + i * 0.2
+      }));
+      break;
+    case 'passing':
+      // Descending 3 notes — Doppler feel
+      notes = [...hFreqs].reverse().slice(0, 3).map((f, i) => ({
+        t: i * (d / 3.2), freq: f, vol: 0.90 - i * 0.15, decay: 0.4 + i * 0.3
+      }));
+      break;
+    case 'distant':
+      // Single high note, barely there
+      notes = [{ t: d * 0.28, freq: hFreqs[hFreqs.length - 1] * 2, vol: 0.50, decay: 2.2 }];
+      break;
+    case 'residue':
+      // Slow pair — long tails, diminuendo
+      notes = [
+        { t: 0,      freq: root2,     vol: 0.65, decay: 1.6 },
+        { t: d*0.48, freq: hFreqs[0], vol: 0.42, decay: 2.5 },
+      ];
+      break;
+    default:
+      notes = [
+        { t: 0,      freq: hFreqs[0], vol: 0.88, decay: 0.7 },
+        { t: d*0.45, freq: hFreqs[1], vol: 0.68, decay: 1.2 },
+      ];
+  }
+
+  notes.forEach(({ t, freq, vol, decay }, i) => {
+    const panShift = (i - (notes.length - 1) / 2) * 0.09;
+    _shadowTone(
+      freq, bVol * vol,
+      0.04, decay,
+      Math.max(-1, Math.min(1, pan0 + panShift)),
+      'sine',
+      now + t
+    );
+  });
+
+  debugLine('shadow', `phrase·${evType}·${notes.length}n·${d.toFixed(1)}s`);
 }
 
 function startShadowBus() {
@@ -1838,8 +1958,8 @@ async function fireEvent(){
       else if (S.arc.beatEvents >= 6) advanceBeat(); // safety auto-advance
     }
     updateVibe(ev);
-    // Shadow: quick tonal burst per event
-    playShadow(ev);
+    // Shadow: arm the phrase — fires when the SFX buffer is decoded (or 2s fallback)
+    armShadow(ev);
     // Harmony: steer chord based on event type (probabilistic)
     nudgeHarmony(ev);
     flashAgent(ev.agent, ev.agent_updates);
