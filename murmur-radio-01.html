@@ -474,7 +474,7 @@
   <div><span class="dk">ghost</span><span class="dv" id="dbg-ghost">—</span></div>
   <div><span class="dk">sfx</span><span class="dv" id="dbg-sfx">—</span></div>
   <div><span class="dk">shadow</span><span class="dv" id="dbg-shadow">—</span></div>
-  <div><span class="dk">mood</span><span class="dv" id="dbg-mood">—</span></div>
+  <div><span class="dk">melody</span><span class="dv" id="dbg-mood">—</span></div>
 </div>
 
 <div id="world-selector">
@@ -550,7 +550,7 @@
     <input type="range" id="mix-shadow" class="mix-slider" min="0" max="1" step="0.01" value="0.72">
   </div>
   <div class="mix-row">
-    <span class="mix-label">mood</span>
+    <span class="mix-label">melody</span>
     <input type="range" id="mix-mood" class="mix-slider" min="0" max="1" step="0.01" value="0.58">
   </div>
 </div>
@@ -1449,7 +1449,7 @@ function playShadow(ev) {
   if (!ctx || !shadowGain || !S.running) return;
   const { activity, tension, register } = VIBE;
   const dir = ev.direction || 'all around';
-  const baseVol = 0.08 + register * 0.04; // always quiet — shadow, not signal
+  const baseVol = 0.32 + register * 0.16; // audible but below SFX level
   if (Math.random() < 0.12) return; // occasional silence — shadow has gaps too
   const delay = ev.type==='conflict'    ?  180+Math.random()*200 :
                 ev.type==='interaction' ?  350+Math.random()*400 :
@@ -1496,102 +1496,206 @@ function stopShadowBus() {
 // Built from world-specific inharmonic partials + long reverb.
 // ═══════════════════════════════════════════════════════════
 
-const WORLD_MOOD = {
-  water:  { f0: 63, partials:[1,2.02,2.97,4.03,5.01],
-            vols:[0.90,0.58,0.30,0.16,0.09],
-            lfoRates:[0.026,0.019,0.015,0.011,0.008] },
-  forest: { f0: 55, partials:[1,1.98,3.01,3.99,5.03],
-            vols:[0.88,0.54,0.26,0.14,0.08],
-            lfoRates:[0.020,0.016,0.012,0.009,0.007] },
-  city:   { f0: 60, partials:[1,2.00,3.00,4.00,5.00],
-            vols:[0.85,0.60,0.38,0.20,0.11],
-            lfoRates:[0.032,0.025,0.018,0.014,0.011] },
+// ═══════════════════════════════════════════════════════════
+// HARMONY FIELD — chord generator synthesis as ambient music layer
+// World-specific key + mode. Tension drives chord colour.
+// Events nudge which chord is active. Slow harmonic timer advances
+// through the progression on its own.
+// ═══════════════════════════════════════════════════════════
+
+const WORLD_HARMONY = {
+  water:  { key: 2,  mode: 'dorian', baseOct: 3, prog: [0,5,3,4] }, // D dorian — fluid
+  forest: { key: 9,  mode: 'minor',  baseOct: 3, prog: [0,5,2,3] }, // A minor  — dark
+  city:   { key: 10, mode: 'dorian', baseOct: 3, prog: [0,3,4,0] }, // Bb dorian — urban
+};
+const HARM_MODES = {
+  major:  [0,2,4,5,7,9,11],
+  minor:  [0,2,3,5,7,8,10],
+  dorian: [0,2,3,5,7,9,10],
+};
+const HARM_QUALITY = {
+  major:  ['maj','min','min','maj','maj','min','dim'],
+  minor:  ['min','dim','maj','min','min','maj','maj'],
+  dorian: ['min','min','maj','maj','min','dim','maj'],
+};
+const HARM_IVLS_MAJ = { triad:[0,4,7], '7th':[0,4,7,11], '9th':[0,4,7,11,14], sus4:[0,5,7] };
+const HARM_IVLS_MIN = { triad:[0,3,7], '7th':[0,3,7,10], '9th':[0,3,7,10,14], sus4:[0,5,7] };
+const HARM_NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+// Event type → chord degree hints
+const HARM_EV_DEGREE = {
+  moment:      [0],        // I — presence, grounded
+  interaction: [3, 4],     // IV or V — reaching out
+  conflict:    [4, 6],     // V or vii° — tension
+  shift:       [5, 2],     // VI or III — pivot
+  distant:     [2, 0],     // III or I — far
+  passing:     [1, 3],     // II or IV — movement
+  residue:     [0, 5],     // I or VI — settling
 };
 
-let moodOscs   = [];  // { osc, envGain, lfo, baseVol }
-let moodPreMix = null;
-let _moodRevNode = null;
+let _harmOscs    = [];   // { osc, env } pairs currently sounding
+let _harmPreMix  = null; // pre-reverb sum
+let _harmConv    = null; // reverb convolver
+let _harmTimer   = null; // slow chord change timer
+let _harmCurrent = 0;    // current chord degree
+let _harmRunning = false;
 
-function _buildMoodIR() {
-  // Long diffuse reverb — 3.8s, stereo
-  const sr = ctx.sampleRate, len = Math.floor(sr * 3.8);
-  const ir = ctx.createBuffer(2, len, sr);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = ir.getChannelData(ch);
-    for (let i = 0; i < len; i++)
-      d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 1.7) * (ch===1?0.91:1);
-  }
-  const conv = ctx.createConvolver(); conv.buffer = ir; return conv;
+function _harmMidiToHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+function _harmColour() {
+  if (VIBE.tension < 0.30) return 'triad';
+  if (VIBE.tension < 0.55) return '7th';
+  if (VIBE.tension < 0.78) return '9th';
+  return 'sus4';
+}
+
+function _getHarmMidis(degree) {
+  const cfg    = WORLD_HARMONY[S.world] || WORLD_HARMONY.water;
+  const scale  = HARM_MODES[cfg.mode];
+  const qual   = HARM_QUALITY[cfg.mode];
+  const root   = (cfg.key + scale[degree % 7]) % 12;
+  const type   = qual[degree % 7];
+  const minor  = type === 'min' || type === 'dim';
+  const colour = _harmColour();
+  const ivls   = (minor ? HARM_IVLS_MIN : HARM_IVLS_MAJ)[colour] || [0,3,7];
+  return ivls.map(iv => {
+    const oct = cfg.baseOct + (iv >= 12 ? 1 : 0);
+    return 60 + root + iv + (oct - 4) * 12;
+  });
+}
+
+function _stopHarmOscs(fadeTC = 1.0) {
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const prev = _harmOscs.splice(0);
+  prev.forEach(({ osc, env }) => {
+    try { env.gain.cancelScheduledValues(now); env.gain.setTargetAtTime(0, now, fadeTC); } catch(e){}
+    try { osc.stop(now + fadeTC * 5); } catch(e){}
+  });
+}
+
+function _playHarmChord(degree) {
+  if (!ctx || !moodGain || !_harmRunning) return;
+  _stopHarmOscs(1.2); // crossfade old chord out
+
+  const midis   = _getHarmMidis(degree);
+  const now     = ctx.currentTime;
+  const arpDelay = 0.42 - VIBE.activity * 0.16; // calm=slower, active=faster arp
+  const perNote  = (0.16 + VIBE.activity * 0.04) / midis.length;
+  const dest     = _harmPreMix || moodGain;
+
+  midis.forEach((midi, i) => {
+    const freq = _harmMidiToHz(midi);
+    const osc  = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const env  = ctx.createGain();
+    const env2 = ctx.createGain();
+    const pan  = ctx.createStereoPanner();
+
+    osc.type  = 'triangle'; osc.frequency.value  = freq;
+    osc2.type = 'sine';     osc2.frequency.value = freq * 2.001;
+    osc.detune.value  = (Math.random() - 0.5) * 5;
+    osc2.detune.value = (Math.random() - 0.5) * 7;
+    pan.pan.value = (midis.length > 1) ? (i / (midis.length - 1) - 0.5) * 0.52 : 0;
+
+    const t = now + i * arpDelay;
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(perNote, t + 0.55);
+    env.gain.setTargetAtTime(perNote * 0.70, t + 0.9, 4.5);
+
+    env2.gain.setValueAtTime(0, t);
+    env2.gain.linearRampToValueAtTime(perNote * 0.40, t + 0.70);
+    env2.gain.setTargetAtTime(perNote * 0.26, t + 1.1, 5.5);
+
+    osc.connect(env); env.connect(pan); pan.connect(dest);
+    osc2.connect(env2); env2.connect(pan);
+    osc.start(t); osc2.start(t);
+
+    _harmOscs.push({ osc: osc,  env: env  });
+    _harmOscs.push({ osc: osc2, env: env2 });
+  });
+
+  _harmCurrent = degree;
+  const cfg   = WORLD_HARMONY[S.world] || WORLD_HARMONY.water;
+  const scale = HARM_MODES[cfg.mode];
+  const rootN = HARM_NOTE_NAMES[(cfg.key + scale[degree % 7]) % 12];
+  debugLine('mood', `${rootN} ${_harmColour()}`);
+}
+
+function _scheduleNextChord() {
+  clearTimeout(_harmTimer);
+  if (!_harmRunning) return;
+  // Slow harmonic rhythm: 18-45s, shorter when more active
+  const delay = (18 + (1 - VIBE.activity) * 27 + Math.random() * 10) * 1000;
+  _harmTimer = setTimeout(() => {
+    if (!_harmRunning) return;
+    const cfg  = WORLD_HARMONY[S.world] || WORLD_HARMONY.water;
+    const prog = cfg.prog;
+    const nextIdx = (prog.indexOf(_harmCurrent) + 1) % prog.length;
+    _playHarmChord(prog[nextIdx]);
+    _scheduleNextChord();
+  }, delay);
 }
 
 function startMood(world) {
   stopMood();
-  const cfg = WORLD_MOOD[world]; if (!cfg || !ctx) return;
+  if (!ctx) return;
 
   moodGain = ctx.createGain();
   moodGain.gain.value = 0;
   moodGain.connect(masterGain);
 
-  _moodRevNode = _buildMoodIR();
-  moodPreMix = ctx.createGain(); moodPreMix.gain.value = 1;
+  // Reverb bus for the chord field
+  const sr = ctx.sampleRate, len = Math.floor(sr * 2.6);
+  const ir = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++)
+      d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 1.9) * (ch===1?0.90:1);
+  }
+  _harmConv = ctx.createConvolver(); _harmConv.buffer = ir;
 
-  const dryG = ctx.createGain(); dryG.gain.value = 0.22;
-  const wetG  = ctx.createGain(); wetG.gain.value  = 0.90; // heard mostly as reverb tail
-  moodPreMix.connect(dryG); dryG.connect(moodGain);
-  moodPreMix.connect(_moodRevNode); _moodRevNode.connect(wetG); wetG.connect(moodGain);
+  _harmPreMix = ctx.createGain(); _harmPreMix.gain.value = 1;
+  const dryG = ctx.createGain(); dryG.gain.value = 0.58;
+  const wetG = ctx.createGain(); wetG.gain.value = 0.52;
+  _harmPreMix.connect(dryG); dryG.connect(moodGain);
+  _harmPreMix.connect(_harmConv); _harmConv.connect(wetG); wetG.connect(moodGain);
 
-  cfg.partials.forEach((p, i) => {
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = cfg.f0 * p;
-    osc.detune.value = (Math.random()-0.5) * 5; // ±2.5 cents drift
-    const envGain = ctx.createGain(); envGain.gain.value = 0;
-    // Slow breathing LFO per partial
-    const lfo = ctx.createOscillator(); lfo.type = 'sine';
-    lfo.frequency.value = cfg.lfoRates[i];
-    const lfoD = ctx.createGain(); lfoD.gain.value = cfg.vols[i] * 0.010;
-    lfo.connect(lfoD); lfoD.connect(envGain.gain);
-    osc.connect(envGain); envGain.connect(moodPreMix);
-    osc.start(); lfo.start();
-    moodOscs.push({ osc, envGain, lfo, baseVol: cfg.vols[i] });
-  });
-
-  // Fade in mood very slowly
   moodGain.gain.setTargetAtTime(
-    parseFloat(document.getElementById('mix-mood')?.value ?? 0.58), ctx.currentTime, 12.0
+    parseFloat(document.getElementById('mix-mood')?.value ?? 0.58), ctx.currentTime, 2.0
   );
-  updateMoodVibe();
+
+  _harmRunning = true;
+  _harmCurrent = 0;
+  const cfg = WORLD_HARMONY[world] || WORLD_HARMONY.water;
+  _playHarmChord(cfg.prog[0]);
+  _scheduleNextChord();
 }
 
 function stopMood() {
-  moodOscs.forEach(({ osc, lfo }) => {
-    try { osc.stop(); } catch(e){}
-    try { lfo.stop(); } catch(e){}
-  });
-  moodOscs = [];
-  if (moodGain)    { moodGain.disconnect();    moodGain=null; }
-  if (_moodRevNode){ _moodRevNode.disconnect(); _moodRevNode=null; }
-  moodPreMix = null;
+  _harmRunning = false;
+  clearTimeout(_harmTimer);
+  _stopHarmOscs(0.8);
+  if (moodGain)   { moodGain.disconnect();   moodGain = null; }
+  if (_harmConv)  { _harmConv.disconnect();  _harmConv = null; }
+  _harmPreMix = null; _harmOscs = [];
 }
 
-// Called from updateVibe — mood drifts very slowly toward current VIBE
+// Called on VIBE changes — refreshes chord colour without forcing a chord change
 function updateMoodVibe() {
-  if (!moodGain || !ctx || !moodOscs.length) return;
-  const now = ctx.currentTime;
-  const TC = 25; // 25-second time constant — mood moves glacially
-  moodOscs.forEach(({ envGain, baseVol }, i) => {
-    // Activity gates which partials are heard
-    const actGate = i===0 ? 1.0
-                  : i===1 ? Math.pow(VIBE.activity, 0.45)
-                  : i===2 ? Math.pow(VIBE.activity, 0.85)
-                  : i===3 ? Math.pow(VIBE.activity, 1.3)
-                  :         Math.pow(VIBE.activity, 1.9);
-    // Tension subtly brightens upper partials
-    const tensionBoost = i >= 3 ? 1 + VIBE.tension * 0.35 : 1.0;
-    const target = baseVol * actGate * tensionBoost * 0.028; // very quiet
-    envGain.gain.setTargetAtTime(target, now, TC);
-  });
-  debugLine('mood', `act=${VIBE.activity.toFixed(2)} ten=${VIBE.tension.toFixed(2)}`);
+  if (!_harmRunning || !ctx || !moodGain) return;
+  debugLine('mood', `${HARM_NOTE_NAMES[(WORLD_HARMONY[S.world]?.key||0)]} ${_harmColour()} · ten=${VIBE.tension.toFixed(2)}`);
+}
+
+// Called after each world event — steers the chord based on event type
+function nudgeHarmony(ev) {
+  if (!_harmRunning || !ctx || !moodGain) return;
+  if (Math.random() > 0.38) return; // 38% chance — not every event shifts harmony
+  const hints = HARM_EV_DEGREE[ev.type] || [0];
+  const deg   = hints[Math.floor(Math.random() * hints.length)];
+  if (deg === _harmCurrent) return;
+  _playHarmChord(deg);
+  _scheduleNextChord();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1734,8 +1838,10 @@ async function fireEvent(){
       else if (S.arc.beatEvents >= 6) advanceBeat(); // safety auto-advance
     }
     updateVibe(ev);
-    // Shadow: the emotional resonance of this event
+    // Shadow: quick tonal burst per event
     playShadow(ev);
+    // Harmony: steer chord based on event type (probabilistic)
+    nudgeHarmony(ev);
     flashAgent(ev.agent, ev.agent_updates);
     updateClock();
     addPanelEntry(rawPrompt, rawResponse, ev);
@@ -1991,8 +2097,9 @@ function applyArcBeatMood() {
   VIBE.activity = VIBE.activity + (mood.activity - VIBE.activity) * blend;
   VIBE.tension  = VIBE.tension  + (mood.tension  - VIBE.tension)  * blend;
   VIBE.register = VIBE.register + (mood.register - VIBE.register) * blend;
-  // Mood layer will drift toward new VIBE state via updateMoodVibe
-  updateMoodVibe();
+  // Nudge harmony chord based on arc beat energy
+  // setup/residue → distant/residue type, peak → conflict, development → passing
+  nudgeHarmony({ type: ['distant','passing','conflict','residue','residue'][moodIdx] });
   debugLine('arc', `beat ${S.arc.beatIdx} → mood ${moodIdx} (t=${mood.tension.toFixed(2)})`);
 }
 
@@ -2590,7 +2697,7 @@ const KN_TICKS = [
   { level:0,   label:'noise'   },
   { level:1/3, label:'+sfx'    },
   { level:2/3, label:'+shadow' },
-  { level:1,   label:'+mood'   },
+  { level:1,   label:'+melody' },
 ];
 
 function drawKnob() {
@@ -2668,7 +2775,7 @@ function updateLayerGains(level) {
   const now = ctx.currentTime, tc = 0.3;
 
   // Each layer fades in over a 0.18-wide zone:
-  // sfx+ghost: 0.22→0.40  |  shadow: 0.50→0.68  |  mood: 0.78→0.96
+  // sfx+ghost: 0.22→0.40  |  shadow: 0.50→0.68  |  melody: 0.78→0.96
   const sfxMult    = clamp01((level - 0.22) / 0.18);
   const ghostMult  = sfxMult;
   const shadowMult = clamp01((level - 0.50) / 0.18);
