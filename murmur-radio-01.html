@@ -512,8 +512,9 @@
     #radio {
       width: 100%;
       max-width: 360px;
-      height: auto;
+      height: auto !important;   /* override fixed 90px from desktop */
       min-height: 0;
+      overflow: visible !important; /* desktop overflow:hidden would clip column */
       flex-direction: column;
       border-radius: 18px;
     }
@@ -532,7 +533,7 @@
       border-left: none;
       border-top: 1px solid #1c1c18;
       padding: 13px 18px;
-      height: auto;
+      height: auto !important;
       min-height: 54px;
       width: 100%;
     }
@@ -543,14 +544,17 @@
       border-left: none;
       border-top: 1px solid #1c1c18;
       width: 100%;
-      padding: 13px 20px;
+      height: auto !important;   /* desktop height:100% breaks in column */
+      padding: 14px 20px;
       gap: 16px;
       justify-content: center;
       flex-wrap: wrap;
     }
-    #start-btn { width: 38px; height: 38px; font-size: 11px; border-radius: 6px; }
-    #shake-btn { width: 38px; height: 38px; font-size: 14px; border-radius: 6px; }
-    #vol-slider { width: 100px; }
+    /* Hide decorative bars — play/vol/shake take centre stage */
+    #radio-bars { display: none; }
+    #start-btn { width: 44px; height: 44px; font-size: 13px; border-radius: 8px; }
+    #shake-btn { width: 44px; height: 44px; font-size: 16px; border-radius: 8px; }
+    #vol-slider { width: 110px; }
 
     /* Layer knob: center below card ────────────────────────── */
     #layer-knob-wrap {
