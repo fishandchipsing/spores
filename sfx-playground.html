@@ -542,6 +542,8 @@ document.querySelectorAll('.fx-btn').forEach(btn => {
     SFX_FX[fx] = !SFX_FX[fx];
     btn.classList.toggle('active', SFX_FX[fx]);
     if (fx === 'reverb') _sfxConvolver = null;
+    // Restart immediately if something is playing so the change is audible
+    if (currentSrc || granularLooping) playCurrent();
   });
 });
 
