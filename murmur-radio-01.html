@@ -465,6 +465,117 @@
     flex: 1; min-width: 0;
   }
   .se-text.filename { color: var(--p-mid); font-style: italic; }
+
+  /* ═══════════════════════════════════════════════════════════
+     MOBILE  (≤ 640 px — phone portrait / small tablet)
+     Simplified player — no side panel, no mix sliders, vertical
+     ══════════════════════════════════════════════════════════ */
+  @media (max-width: 640px) {
+
+    /* ── Hide desktop-only chrome ───────────────────────────── */
+    #debug-overlay,
+    #side-panel,
+    #panel-toggle,
+    #secondary,
+    #settings-toggle,
+    #mix,
+    #sfx-fx-row    { display: none !important; }
+
+    /* ── Body: top-aligned, safe-area padding ───────────────── */
+    body {
+      justify-content: flex-start;
+      align-items: center;
+      padding: max(28px, env(safe-area-inset-top))
+               20px
+               max(24px, env(safe-area-inset-bottom));
+      gap: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* ── World selector ─────────────────────────────────────── */
+    #world-selector {
+      margin-bottom: 20px;
+      gap: 32px;
+    }
+    .world-btn { font-size: 11px; padding: 8px 0; }
+
+    /* ── Radio row: vertical stack ──────────────────────────── */
+    #radio-row {
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+    }
+
+    /* ── Radio pill → vertical card, full width ─────────────── */
+    #radio {
+      width: 100%;
+      max-width: 360px;
+      height: auto;
+      min-height: 0;
+      flex-direction: column;
+      border-radius: 18px;
+    }
+
+    /* Viz area: fills top of the card, taller rectangle ───── */
+    #radio-circle {
+      width: 100%;
+      height: 200px;
+      border-radius: 18px 18px 0 0;
+      flex-shrink: 0;
+    }
+    #radio-circle::after { border-radius: 18px 18px 0 0; }
+
+    /* Ticker: full width below viz ─────────────────────────── */
+    #radio-ticker {
+      border-left: none;
+      border-top: 1px solid #1c1c18;
+      padding: 13px 18px;
+      height: auto;
+      min-height: 54px;
+      width: 100%;
+    }
+    #ticker-text { font-size: 11px; letter-spacing: 0.12em; }
+
+    /* Controls row: centered, bigger tap targets ───────────── */
+    #radio-right {
+      border-left: none;
+      border-top: 1px solid #1c1c18;
+      width: 100%;
+      padding: 13px 20px;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    #start-btn { width: 38px; height: 38px; font-size: 11px; border-radius: 6px; }
+    #shake-btn { width: 38px; height: 38px; font-size: 14px; border-radius: 6px; }
+    #vol-slider { width: 100px; }
+
+    /* Layer knob: center below card ────────────────────────── */
+    #layer-knob-wrap {
+      margin-top: 2px;
+    }
+
+    /* SFX display: centered ────────────────────────────────── */
+    #sfx-display {
+      max-width: 360px;
+      width: 100%;
+      justify-content: center;
+      margin-top: 8px;
+      font-size: 9px;
+    }
+
+    /* Meta strip: wrap + center ────────────────────────────── */
+    #meta {
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 360px;
+      font-size: 8px;
+      margin-top: 7px;
+      gap: 6px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -2904,18 +3015,21 @@ function updateLayerGains(level) {
   const mT  = level < 0.5 ? lerp(0.00, 0.20, level / 0.5) : lerp(0.20, 0.50, (level - 0.5) / 0.5);
   const gT  = sT * 0.45; // ghost tracks sfx at 45%
 
-  // Sliders are 0–1 trims on top of these targets (default 1.0 = no trim)
-  const nS  = parseFloat(document.getElementById('mix-noise')?.value    ?? 1.0);
-  const sS  = parseFloat(document.getElementById('mix-sfx')?.value      ?? 1.0);
-  const shS = parseFloat(document.getElementById('mix-shadow')?.value   ?? 1.0);
-  const mS  = parseFloat(document.getElementById('mix-mood')?.value     ?? 1.0);
-  const gS  = parseFloat(document.getElementById('ghost-slider')?.value ?? 1.0);
+  // Update slider positions to show live levels
+  const ns  = document.getElementById('mix-noise');
+  const ss  = document.getElementById('mix-sfx');
+  const shs = document.getElementById('mix-shadow');
+  const ms  = document.getElementById('mix-mood');
+  if (ns)  ns.value  = nT.toFixed(3);
+  if (ss)  ss.value  = sT.toFixed(3);
+  if (shs) shs.value = shT.toFixed(3);
+  if (ms)  ms.value  = mT.toFixed(3);
 
-  if (noiseChGain)     noiseChGain.gain.setTargetAtTime(nT  * nS,  now, tc);
-  if (sfxGain)         sfxGain.gain.setTargetAtTime(sT      * sS,  now, tc);
-  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(gT * gS, now, tc);
-  if (shadowGain)      shadowGain.gain.setTargetAtTime(shT  * shS, now, tc);
-  if (moodGain)        moodGain.gain.setTargetAtTime(mT     * mS,  now, tc);
+  if (noiseChGain)     noiseChGain.gain.setTargetAtTime(nT,       now, tc);
+  if (sfxGain)         sfxGain.gain.setTargetAtTime(sT,           now, tc);
+  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(gT,   now, tc);
+  if (shadowGain)      shadowGain.gain.setTargetAtTime(shT,       now, tc);
+  if (moodGain)        moodGain.gain.setTargetAtTime(mT,          now, tc);
 }
 
 // Drag handling — vertical drag: up = more, down = less
@@ -2964,10 +3078,21 @@ setInterval(()=>{ if(S.running) updateClock(); },1000);
 document.getElementById('settings-toggle').addEventListener('click', () => {
   document.getElementById('secondary').classList.toggle('open');
 });
-document.getElementById('mix-noise').addEventListener('input', () => updateLayerGains(layerLevel));
-document.getElementById('mix-sfx').addEventListener('input',    () => updateLayerGains(layerLevel));
-document.getElementById('mix-shadow').addEventListener('input',  () => updateLayerGains(layerLevel));
-document.getElementById('mix-mood').addEventListener('input',    () => updateLayerGains(layerLevel));
+// Sliders show live levels from knob; dragging one fine-tunes that layer directly
+document.getElementById('mix-noise').addEventListener('input', e => {
+  if (noiseChGain && ctx) noiseChGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.08);
+});
+document.getElementById('mix-sfx').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  if (sfxGain && ctx)         sfxGain.gain.setTargetAtTime(v,        ctx.currentTime, 0.08);
+  if (ghostMasterGain && ctx) ghostMasterGain.gain.setTargetAtTime(v * 0.45, ctx.currentTime, 0.08);
+});
+document.getElementById('mix-shadow').addEventListener('input', e => {
+  if (shadowGain && ctx) shadowGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.08);
+});
+document.getElementById('mix-mood').addEventListener('input', e => {
+  if (moodGain && ctx) moodGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.08);
+});
 
 // ── Shake button ─────────────────────────────────────────────────
 document.getElementById('shake-btn').addEventListener('click', () => {
