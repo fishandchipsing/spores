@@ -2800,7 +2800,7 @@ function stopViz() {
 // ═══════════════════════════════════════════════════════════
 // LAYER KNOB
 // ═══════════════════════════════════════════════════════════
-let layerLevel = 1.0; // 0=noise only → 1=all layers
+let layerLevel = 0.5; // 0=world · 0.5=blend · 1=music
 let _knobDragging = false, _knobLastY = 0;
 
 // Canvas geometry
@@ -2814,10 +2814,9 @@ const KN_START = 3 * Math.PI / 4;         // 135° canvas = 7:30 clock (min posi
 const KN_RANGE = 3 * Math.PI / 2;         // 270° total sweep
 
 const KN_TICKS = [
-  { level:0,   label:'noise'   },
-  { level:1/3, label:'+sfx'    },
-  { level:2/3, label:'+shadow' },
-  { level:1,   label:'+melody' },
+  { level:0,   label:'world' },
+  { level:0.5, label:'blend' },
+  { level:1,   label:'music' },
 ];
 
 function drawKnob() {
@@ -2892,24 +2891,44 @@ function updateLayerGains(level) {
   layerLevel = level;
   drawKnob();
   if (!ctx) return;
-  const now = ctx.currentTime, tc = 0.3;
+  const now = ctx.currentTime, tc = 0.35;
 
-  // Each layer fades in over a 0.18-wide zone:
-  // sfx+ghost: 0.22→0.40  |  shadow: 0.50→0.68  |  melody: 0.78→0.96
-  const sfxMult    = clamp01((level - 0.22) / 0.18);
-  const ghostMult  = sfxMult;
-  const shadowMult = clamp01((level - 0.50) / 0.18);
-  const moodMult   = clamp01((level - 0.78) / 0.18);
+  // ── World ←→ Music crossfade ─────────────────────────────────────
+  // Left  (0.0) : full noise  · whisper sfx  · no shadow/melody
+  // Middle(0.5) : low noise   · peak sfx     · shadow+melody present
+  // Right (1.0) : no noise    · no sfx       · full shadow+melody
 
-  const sfxBase    = parseFloat(document.getElementById('mix-sfx')?.value    ?? 0.75);
+  // noise: 1.0 → 0.28 → 0.0
+  const noiseMult = level < 0.5
+    ? 1.0  - (1.0  - 0.28) * (level / 0.5)        // 1.00 → 0.28
+    : 0.28 * (1 - (level - 0.5) / 0.5);            // 0.28 → 0.00
+
+  // sfx + ghost: 0.1 → 1.0 → 0.0  (bell, peak at centre)
+  const sfxMult = level < 0.5
+    ? 0.10 + (1.0 - 0.10) * (level / 0.5)          // 0.10 → 1.00
+    : 1.0  - (level - 0.5) / 0.5;                  // 1.00 → 0.00
+
+  // shadow: 0.0 → 0.6 → 1.0  (rises, accelerates right)
+  const shadowMult = level < 0.5
+    ? 0.60 * (level / 0.5)                          // 0.00 → 0.60
+    : 0.60 + 0.40 * ((level - 0.5) / 0.5);         // 0.60 → 1.00
+
+  // melody: same shape as shadow, slight lag
+  const moodMult = level < 0.5
+    ? 0.55 * (level / 0.5)                          // 0.00 → 0.55
+    : 0.55 + 0.45 * ((level - 0.5) / 0.5);         // 0.55 → 1.00
+
+  const noiseBase  = parseFloat(document.getElementById('mix-noise')?.value    ?? 0.60);
+  const sfxBase    = parseFloat(document.getElementById('mix-sfx')?.value      ?? 0.75);
   const ghostBase  = parseFloat(document.getElementById('ghost-slider')?.value ?? 0.35);
-  const shadowBase = parseFloat(document.getElementById('mix-shadow')?.value  ?? 0.72);
-  const moodBase   = parseFloat(document.getElementById('mix-mood')?.value    ?? 0.58);
+  const shadowBase = parseFloat(document.getElementById('mix-shadow')?.value   ?? 0.72);
+  const moodBase   = parseFloat(document.getElementById('mix-mood')?.value     ?? 0.58);
 
-  if (sfxGain)         sfxGain.gain.setTargetAtTime(sfxBase * sfxMult, now, tc);
-  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(ghostBase * ghostMult, now, tc);
-  if (shadowGain)      shadowGain.gain.setTargetAtTime(shadowBase * shadowMult, now, tc);
-  if (moodGain)        moodGain.gain.setTargetAtTime(moodBase * moodMult, now, tc);
+  if (noiseChGain)     noiseChGain.gain.setTargetAtTime(noiseBase * noiseMult,   now, tc);
+  if (sfxGain)         sfxGain.gain.setTargetAtTime(sfxBase * sfxMult,           now, tc);
+  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(ghostBase * sfxMult, now, tc);
+  if (shadowGain)      shadowGain.gain.setTargetAtTime(shadowBase * shadowMult,  now, tc);
+  if (moodGain)        moodGain.gain.setTargetAtTime(moodBase * moodMult,        now, tc);
 }
 
 // Drag handling — vertical drag: up = more, down = less
@@ -2958,9 +2977,7 @@ setInterval(()=>{ if(S.running) updateClock(); },1000);
 document.getElementById('settings-toggle').addEventListener('click', () => {
   document.getElementById('secondary').classList.toggle('open');
 });
-document.getElementById('mix-noise').addEventListener('input', e => {
-  if (noiseChGain && ctx) noiseChGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
-});
+document.getElementById('mix-noise').addEventListener('input', () => updateLayerGains(layerLevel));
 document.getElementById('mix-sfx').addEventListener('input',    () => updateLayerGains(layerLevel));
 document.getElementById('mix-shadow').addEventListener('input',  () => updateLayerGains(layerLevel));
 document.getElementById('mix-mood').addEventListener('input',    () => updateLayerGains(layerLevel));
