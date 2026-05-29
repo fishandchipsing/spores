@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sfx playground</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a08; --dim: #1a1a16; --muted: #64645a;
+    --text: #d0d0c0; --accent: #e8e8d8; --event: #f4f4ec;
+  }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'IBM Plex Mono', monospace; font-weight: 300;
+    font-size: 13px; line-height: 1.7; overflow: hidden;
+    cursor: default; user-select: none;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 0;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  }
+
+  /* ── world filter ─────────────────────────────────────── */
+  #world-filter {
+    display: flex; gap: 22px; margin-bottom: 28px;
+  }
+  .wf-btn {
+    background: none; border: none; color: var(--muted);
+    font-family: inherit; font-size: 10px; font-weight: 300;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer; padding: 0; transition: color 0.3s; position: relative;
+  }
+  .wf-btn::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 0; height: 1px; background: var(--accent); transition: width 0.4s; }
+  .wf-btn.active { color: var(--accent); }
+  .wf-btn.active::after { width: 100%; }
+  .wf-btn:hover { color: var(--text); }
+
+  /* ── player card ──────────────────────────────────────── */
+  #player {
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+    width: 480px;
+  }
+
+  /* sound name */
+  #sound-name {
+    font-size: 11px; color: var(--accent); letter-spacing: 0.06em;
+    text-align: center; max-width: 420px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    height: 16px;
+  }
+  #sound-index {
+    font-size: 9px; color: var(--muted); letter-spacing: 0.1em;
+    margin-top: -10px;
+  }
+
+  /* waveform canvas */
+  #waveform {
+    width: 480px; height: 56px;
+    opacity: 0.7;
+  }
+
+  /* progress bar */
+  #progress-wrap {
+    width: 100%; height: 2px; background: var(--dim); border-radius: 1px; position: relative;
+  }
+  #progress-bar {
+    height: 2px; background: var(--muted); border-radius: 1px;
+    width: 0%; transition: width 0.08s linear;
+  }
+
+  /* transport */
+  #transport {
+    display: flex; align-items: center; gap: 20px;
+  }
+  .t-btn {
+    background: none; border: none; color: var(--muted);
+    font-family: inherit; font-size: 16px; cursor: pointer;
+    padding: 4px 8px; transition: color 0.2s; line-height: 1;
+    letter-spacing: 0;
+  }
+  .t-btn:hover { color: var(--accent); }
+  #play-btn {
+    width: 34px; height: 34px; background: var(--muted); border: none;
+    border-radius: 6px; color: var(--bg); font-family: inherit;
+    font-size: 11px; cursor: pointer; display: flex;
+    align-items: center; justify-content: center;
+    transition: background 0.25s;
+  }
+  #play-btn.playing { background: var(--accent); }
+  #play-btn:hover:not(.playing) { background: var(--text); }
+
+  /* auto-advance toggle */
+  #auto-label {
+    font-size: 9px; color: var(--muted); letter-spacing: 0.12em;
+    text-transform: uppercase; cursor: pointer;
+    transition: color 0.2s;
+  }
+  #auto-label.on { color: var(--text); }
+
+  /* ── effect buttons ───────────────────────────────────── */
+  #fx-row {
+    display: flex; gap: 8px; margin-top: 6px;
+  }
+  .fx-btn {
+    background: none; border: 1px solid var(--muted);
+    color: var(--muted); font-family: inherit; font-size: 9px;
+    font-weight: 300; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 3px 10px 4px; border-radius: 10px; cursor: pointer;
+    transition: color 0.2s, border-color 0.2s; line-height: 1;
+  }
+  .fx-btn:hover  { border-color: var(--text);   color: var(--text); }
+  .fx-btn.active { border-color: var(--accent);  color: var(--accent); }
+
+  /* ── vol knob ─────────────────────────────────────────── */
+  #vol-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 4px;
+  }
+  .vol-label { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  #vol-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 100px; height: 2px; background: var(--dim);
+    outline: none; border-radius: 1px; cursor: pointer;
+  }
+  #vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--muted); cursor: pointer;
+    transition: background 0.2s;
+  }
+  #vol-slider:hover::-webkit-slider-thumb { background: var(--accent); }
+
+  /* ── count display ────────────────────────────────────── */
+  #count-display {
+    font-size: 9px; color: var(--muted); letter-spacing: 0.1em;
+    margin-top: -8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="world-filter">
+  <button class="wf-btn active" data-world="all">all</button>
+  <button class="wf-btn" data-world="water">water</button>
+  <button class="wf-btn" data-world="forest">forest</button>
+  <button class="wf-btn" data-world="city">city</button>
+</div>
+
+<div id="player">
+
+  <div id="sound-name">—</div>
+  <div id="sound-index">— / —</div>
+
+  <canvas id="waveform" width="480" height="56"></canvas>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+
+  <div id="transport">
+    <button class="t-btn" id="prev-btn" title="previous">◁</button>
+    <button id="play-btn" title="play / stop">▶</button>
+    <button class="t-btn" id="next-btn" title="next">▷</button>
+    <span id="auto-label" title="auto-advance to next when done">auto</span>
+  </div>
+
+  <div id="fx-row">
+    <button class="fx-btn" data-fx="reverb"   title="room reverb">reverb</button>
+    <button class="fx-btn" data-fx="vocoder"  title="ring modulator">vocoder</button>
+    <button class="fx-btn" data-fx="granular" title="granular scatter">granular</button>
+    <button class="fx-btn" data-fx="lofi"     title="lo-fi tape">lo-fi</button>
+  </div>
+
+  <div id="vol-row">
+    <span class="vol-label">vol</span>
+    <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="0.8">
+  </div>
+
+  <div id="count-display">0 sounds loaded</div>
+
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let allFiles  = [];
+let filtered  = [];
+let cursor    = 0;
+let worldFilter = 'all';
+let autoAdvance = false;
+
+let ctx       = null;
+let masterGain = null;
+let currentSrc = null;
+let playStart  = 0;
+let playDur    = 0;
+let rafId      = null;
+
+const SFX_FX = { reverb: false, vocoder: false, granular: false, lofi: false };
+let _sfxConvolver = null;
+
+// ─── Audio context ───────────────────────────────────────────────────────────
+function ensureCtx() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = ctx.createGain();
+  masterGain.gain.value = parseFloat(document.getElementById('vol-slider').value);
+  masterGain.connect(ctx.destination);
+}
+
+// ─── Load file list ──────────────────────────────────────────────────────────
+async function loadFiles() {
+  try {
+    const r = await fetch('/sfx-cache');
+    allFiles = (await r.json()).sort();
+    applyFilter();
+  } catch(e) {
+    document.getElementById('count-display').textContent = 'could not load /sfx-cache';
+  }
+}
+
+function applyFilter() {
+  filtered = worldFilter === 'all'
+    ? allFiles.slice()
+    : allFiles.filter(f => f.startsWith(worldFilter + '-'));
+  cursor = 0;
+  updateDisplay();
+  document.getElementById('count-display').textContent =
+    filtered.length + ' sound' + (filtered.length !== 1 ? 's' : '');
+}
+
+// ─── Display ─────────────────────────────────────────────────────────────────
+function filenameToLabel(f) {
+  return f
+    .replace(/^[^-]+-/, '')          // strip world prefix
+    .replace(/-\d{10,}\.mp3$/, '')   // strip timestamp
+    .replace(/_/g, ' ');
+}
+
+function updateDisplay() {
+  const nameEl  = document.getElementById('sound-name');
+  const idxEl   = document.getElementById('sound-index');
+  if (!filtered.length) {
+    nameEl.textContent = 'no sounds';
+    idxEl.textContent  = '— / —';
+    return;
+  }
+  nameEl.textContent = filenameToLabel(filtered[cursor]);
+  idxEl.textContent  = (cursor + 1) + ' / ' + filtered.length;
+}
+
+// ─── Waveform drawing ────────────────────────────────────────────────────────
+function drawWaveform(buf) {
+  const canvas = document.getElementById('waveform');
+  const W = canvas.width, H = canvas.height;
+  const dctx = canvas.getContext('2d');
+  dctx.clearRect(0, 0, W, H);
+
+  const data = buf.getChannelData(0);
+  const step = Math.ceil(data.length / W);
+  dctx.strokeStyle = getComputedStyle(document.documentElement)
+    .getPropertyValue('--muted').trim();
+  dctx.lineWidth = 1;
+  dctx.beginPath();
+  for (let x = 0; x < W; x++) {
+    let min = 1, max = -1;
+    for (let j = 0; j < step; j++) {
+      const v = data[x * step + j] || 0;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const yMin = ((1 - max) / 2) * H;
+    const yMax = ((1 - min) / 2) * H;
+    if (x === 0) dctx.moveTo(x, (yMin + yMax) / 2);
+    else { dctx.moveTo(x, yMin); dctx.lineTo(x, yMax); }
+  }
+  dctx.stroke();
+}
+
+function clearWaveform() {
+  const canvas = document.getElementById('waveform');
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+function startProgress(dur) {
+  cancelAnimationFrame(rafId);
+  const bar = document.getElementById('progress-bar');
+  const t0  = performance.now();
+  function tick() {
+    const elapsed = (performance.now() - t0) / 1000;
+    bar.style.width = Math.min(100, (elapsed / dur) * 100) + '%';
+    if (elapsed < dur) rafId = requestAnimationFrame(tick);
+    else bar.style.width = '0%';
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+function resetProgress() {
+  cancelAnimationFrame(rafId);
+  document.getElementById('progress-bar').style.width = '0%';
+}
+
+// ─── Effects ─────────────────────────────────────────────────────────────────
+function _getConvolver() {
+  if (_sfxConvolver) return _sfxConvolver;
+  _sfxConvolver = ctx.createConvolver();
+  const sr = ctx.sampleRate, len = Math.floor(sr * 1.4);
+  const ir = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++)
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6)
+             * (ch === 1 ? 0.93 : 1);
+  }
+  _sfxConvolver.buffer = ir;
+  return _sfxConvolver;
+}
+
+function _lofiCurve(n = 256) {
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2 / n) - 1;
+    c[i] = (Math.PI + 180) * x / (Math.PI + 180 * Math.abs(x));
+  }
+  return c;
+}
+
+// Returns { out, cleanup } — srcNode already connected to chain start
+function _buildFxChain(srcNode, bufDuration) {
+  let node = srcNode;
+  const toStop = [];
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = SFX_FX.lofi ? 1050 : 4000;
+  lp.Q.value         = SFX_FX.lofi ? 1.6  : 0.5;
+  node.connect(lp); node = lp;
+
+  if (SFX_FX.lofi) {
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = _lofiCurve(); shaper.oversample = '2x';
+    const wowLfo   = ctx.createOscillator();
+    wowLfo.type = 'sine';
+    wowLfo.frequency.value = 2.1 + Math.random() * 1.2;
+    const wowDepth = ctx.createGain(); wowDepth.gain.value = 0.03;
+    const wowBias  = ctx.createGain(); wowBias.gain.value  = 1.0;
+    wowLfo.connect(wowDepth); wowDepth.connect(wowBias.gain);
+    wowLfo.start(); toStop.push(wowLfo);
+    node.connect(shaper); shaper.connect(wowBias); node = wowBias;
+  }
+
+  if (SFX_FX.reverb) {
+    const conv = _getConvolver();
+    const dry = ctx.createGain(); dry.gain.value = 0.42;
+    const wet = ctx.createGain(); wet.gain.value = 0.68;
+    const mix = ctx.createGain(); mix.gain.value = 1.0;
+    node.connect(dry); dry.connect(mix);
+    node.connect(conv); conv.connect(wet); wet.connect(mix);
+    node = mix;
+  }
+
+  if (SFX_FX.vocoder) {
+    const rg  = ctx.createGain(); rg.gain.value = 0;
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 220 * (0.96 + Math.random() * 0.08);
+    osc.type = 'sine';
+    osc.connect(rg.gain);
+    node.connect(rg);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+    rg.connect(hp);
+    osc.start(); osc.stop(ctx.currentTime + (bufDuration || 4) + 0.5);
+    node = hp;
+  }
+
+  return {
+    out: node,
+    cleanup: () => toStop.forEach(n => { try { n.stop(); } catch(e){} }),
+  };
+}
+
+function _playGranular(buf, vol) {
+  const masterG = ctx.createGain(); masterG.gain.value = 0;
+  const now = ctx.currentTime;
+  const dur = buf.duration;
+  masterG.gain.setTargetAtTime(vol, now, 0.12);
+  masterG.gain.setTargetAtTime(0, now + dur + 1.5, 0.5);
+
+  let out = masterG;
+  if (SFX_FX.reverb) {
+    const conv = _getConvolver();
+    const dry = ctx.createGain(); dry.gain.value = 0.5;
+    const wet = ctx.createGain(); wet.gain.value = 0.55;
+    const mix = ctx.createGain();
+    masterG.connect(dry); dry.connect(mix);
+    masterG.connect(conv); conv.connect(wet); wet.connect(mix);
+    out = mix;
+  }
+  out.connect(masterGain);
+
+  const numGrains = 32 + Math.floor(Math.random() * 14);
+  const spread    = dur * 2.0;
+  for (let i = 0; i < numGrains; i++) {
+    const offset    = Math.random() * Math.max(0.01, dur - 0.1);
+    const grainDur  = 0.028 + Math.random() * 0.095;
+    const grainTime = now + (i / numGrains) * spread * (0.35 + Math.random() * 1.3);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g   = ctx.createGain();         g.gain.value = 0;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() * 1.2 - 0.6);
+    src.connect(g); g.connect(pan); pan.connect(masterG);
+    g.gain.setValueAtTime(0, grainTime);
+    g.gain.linearRampToValueAtTime(0.6 + Math.random() * 0.4, grainTime + grainDur * 0.38);
+    g.gain.linearRampToValueAtTime(0, grainTime + grainDur);
+    src.start(grainTime, offset, grainDur);
+  }
+
+  return dur * 2.2;  // approximate total duration
+}
+
+// ─── Playback ─────────────────────────────────────────────────────────────────
+function stopCurrent() {
+  if (currentSrc) {
+    try { currentSrc.stop(); } catch(e) {}
+    currentSrc = null;
+  }
+  resetProgress();
+  document.getElementById('play-btn').classList.remove('playing');
+  document.getElementById('play-btn').textContent = '▶';
+}
+
+async function playCurrent() {
+  if (!filtered.length) return;
+  ensureCtx();
+  if (ctx.state === 'suspended') await ctx.resume();
+  stopCurrent();
+
+  const filename = filtered[cursor];
+  let buf;
+  try {
+    const res = await fetch(`/sfx-cache/${encodeURIComponent(filename)}`);
+    if (!res.ok) return;
+    const ab = await res.arrayBuffer();
+    buf = await ctx.decodeAudioData(ab);
+  } catch(e) {
+    console.warn('load error:', e);
+    return;
+  }
+
+  drawWaveform(buf);
+
+  const vol = parseFloat(document.getElementById('vol-slider').value);
+  const playBtn = document.getElementById('play-btn');
+  playBtn.classList.add('playing');
+  playBtn.textContent = '■';
+
+  let totalDur;
+
+  if (SFX_FX.granular) {
+    totalDur = _playGranular(buf, vol);
+  } else {
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const { out, cleanup } = _buildFxChain(src, buf.duration);
+    out.connect(masterGain);
+    src.start();
+    currentSrc = src;
+    totalDur = buf.duration;
+
+    src.onended = () => {
+      cleanup();
+      currentSrc = null;
+      playBtn.classList.remove('playing');
+      playBtn.textContent = '▶';
+      resetProgress();
+      if (autoAdvance) setTimeout(nextSound, 400);
+    };
+
+    setTimeout(cleanup, (buf.duration + 1.5) * 1000);
+  }
+
+  startProgress(totalDur);
+
+  if (SFX_FX.granular) {
+    setTimeout(() => {
+      playBtn.classList.remove('playing');
+      playBtn.textContent = '▶';
+      resetProgress();
+      if (autoAdvance) setTimeout(nextSound, 400);
+    }, totalDur * 1000);
+  }
+}
+
+// ─── Navigation ──────────────────────────────────────────────────────────────
+function prevSound() {
+  if (!filtered.length) return;
+  cursor = (cursor - 1 + filtered.length) % filtered.length;
+  updateDisplay();
+  playCurrent();
+}
+
+function nextSound() {
+  if (!filtered.length) return;
+  cursor = (cursor + 1) % filtered.length;
+  updateDisplay();
+  playCurrent();
+}
+
+// ─── UI Wiring ────────────────────────────────────────────────────────────────
+document.getElementById('prev-btn').addEventListener('click', prevSound);
+document.getElementById('next-btn').addEventListener('click', nextSound);
+
+document.getElementById('play-btn').addEventListener('click', () => {
+  if (currentSrc || document.getElementById('play-btn').classList.contains('playing')) {
+    stopCurrent();
+    clearWaveform();
+  } else {
+    playCurrent();
+  }
+});
+
+document.querySelectorAll('.wf-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.wf-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    worldFilter = btn.dataset.world;
+    stopCurrent();
+    clearWaveform();
+    applyFilter();
+  });
+});
+
+document.querySelectorAll('.fx-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const fx = btn.dataset.fx;
+    SFX_FX[fx] = !SFX_FX[fx];
+    btn.classList.toggle('active', SFX_FX[fx]);
+    if (fx === 'reverb') _sfxConvolver = null;
+  });
+});
+
+const autoLabel = document.getElementById('auto-label');
+autoLabel.addEventListener('click', () => {
+  autoAdvance = !autoAdvance;
+  autoLabel.classList.toggle('on', autoAdvance);
+});
+
+document.getElementById('vol-slider').addEventListener('input', e => {
+  if (masterGain) masterGain.gain.value = parseFloat(e.target.value);
+});
+
+// keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); prevSound(); }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown')  { e.preventDefault(); nextSound(); }
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (document.getElementById('play-btn').classList.contains('playing')) {
+      stopCurrent(); clearWaveform();
+    } else {
+      playCurrent();
+    }
+  }
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+loadFiles();
+</script>
+</body>
+</html>
