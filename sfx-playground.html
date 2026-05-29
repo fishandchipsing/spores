@@ -282,15 +282,20 @@ function clearWaveform() {
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
-function startProgress(dur) {
+function startProgress(dur, loop = false) {
   cancelAnimationFrame(rafId);
   const bar = document.getElementById('progress-bar');
   const t0  = performance.now();
   function tick() {
     const elapsed = (performance.now() - t0) / 1000;
-    bar.style.width = Math.min(100, (elapsed / dur) * 100) + '%';
-    if (elapsed < dur) rafId = requestAnimationFrame(tick);
-    else bar.style.width = '0%';
+    if (loop) {
+      bar.style.width = ((elapsed % dur) / dur * 100) + '%';
+      rafId = requestAnimationFrame(tick);
+    } else {
+      bar.style.width = Math.min(100, (elapsed / dur) * 100) + '%';
+      if (elapsed < dur) rafId = requestAnimationFrame(tick);
+      else bar.style.width = '0%';
+    }
   }
   rafId = requestAnimationFrame(tick);
 }
@@ -368,7 +373,10 @@ function _buildFxChain(srcNode, bufDuration) {
     node.connect(rg);
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
     rg.connect(hp);
-    osc.start(); osc.stop(ctx.currentTime + (bufDuration || 4) + 0.5);
+    osc.start();
+    // Only schedule a stop if we have a finite duration (non-looping)
+    if (isFinite(bufDuration)) osc.stop(ctx.currentTime + bufDuration + 0.5);
+    else toStop.push(osc); // looping: caller stops it via cleanup()
     node = hp;
   }
 
@@ -418,11 +426,19 @@ function _playGranular(buf, vol) {
 }
 
 // ─── Playback ─────────────────────────────────────────────────────────────────
+let currentCleanup  = null;  // stops oscillators from effects chain
+let granularLooping = false; // flag to stop granular re-scatter loop
+
 function stopCurrent() {
+  // stop looping BufferSource
   if (currentSrc) {
     try { currentSrc.stop(); } catch(e) {}
     currentSrc = null;
   }
+  // stop any effect oscillators (lo-fi wow, vocoder carrier)
+  if (currentCleanup) { currentCleanup(); currentCleanup = null; }
+  // stop granular re-scatter
+  granularLooping = false;
   resetProgress();
   document.getElementById('play-btn').classList.remove('playing');
   document.getElementById('play-btn').textContent = '▶';
@@ -453,39 +469,30 @@ async function playCurrent() {
   playBtn.classList.add('playing');
   playBtn.textContent = '■';
 
-  let totalDur;
-
   if (SFX_FX.granular) {
-    totalDur = _playGranular(buf, vol);
+    // Granular loops by re-scattering each cloud slightly before the last one ends
+    granularLooping = true;
+    const cloudDur = buf.duration * 2.2;
+    const scatter = () => {
+      if (!granularLooping) return;
+      _playGranular(buf, vol);
+      setTimeout(scatter, cloudDur * 0.88 * 1000); // overlap slightly
+    };
+    scatter();
+    startProgress(buf.duration * 2.0, true); // cycling progress
   } else {
-    const src = ctx.createBufferSource(); src.buffer = buf;
-    const { out, cleanup } = _buildFxChain(src, buf.duration);
+    // Normal: loop the BufferSource, pass Infinity so vocoder osc never auto-stops
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop   = true;
+
+    const { out, cleanup } = _buildFxChain(src, Infinity);
     out.connect(masterGain);
     src.start();
-    currentSrc = src;
-    totalDur = buf.duration;
+    currentSrc     = src;
+    currentCleanup = cleanup;
 
-    src.onended = () => {
-      cleanup();
-      currentSrc = null;
-      playBtn.classList.remove('playing');
-      playBtn.textContent = '▶';
-      resetProgress();
-      if (autoAdvance) setTimeout(nextSound, 400);
-    };
-
-    setTimeout(cleanup, (buf.duration + 1.5) * 1000);
-  }
-
-  startProgress(totalDur);
-
-  if (SFX_FX.granular) {
-    setTimeout(() => {
-      playBtn.classList.remove('playing');
-      playBtn.textContent = '▶';
-      resetProgress();
-      if (autoAdvance) setTimeout(nextSound, 400);
-    }, totalDur * 1000);
+    startProgress(buf.duration, true); // progress cycles each loop
   }
 }
 
@@ -494,14 +501,15 @@ function prevSound() {
   if (!filtered.length) return;
   cursor = (cursor - 1 + filtered.length) % filtered.length;
   updateDisplay();
-  playCurrent();
+  // play if something was already playing (or auto is on)
+  if (currentSrc || granularLooping || autoAdvance) playCurrent();
 }
 
 function nextSound() {
   if (!filtered.length) return;
   cursor = (cursor + 1) % filtered.length;
   updateDisplay();
-  playCurrent();
+  if (currentSrc || granularLooping || autoAdvance) playCurrent();
 }
 
 // ─── UI Wiring ────────────────────────────────────────────────────────────────
