@@ -39,6 +39,22 @@
   .world-btn.active::after { width: 100%; }
   .world-btn:hover { color: var(--text); }
 
+  /* ── Radio row (pill + knob) ──────────────────────────────── */
+  #radio-row {
+    display: flex; align-items: center; gap: 20px;
+  }
+
+  /* ── Layer knob ───────────────────────────────────────────── */
+  #layer-knob-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    flex-shrink: 0;
+  }
+  #layer-knob-canvas {
+    cursor: ns-resize;
+    display: block;
+  }
+  #layer-knob-canvas:active { cursor: grabbing; }
+
   /* ── Radio pill ───────────────────────────────────────────── */
   #radio {
     display: flex; align-items: center;
@@ -449,6 +465,7 @@
   <button class="world-btn" data-world="forest">forest</button>
 </div>
 
+<div id="radio-row">
 <div id="radio">
   <div id="radio-circle">
     <canvas id="world-canvas"></canvas>
@@ -473,6 +490,10 @@
     <button id="start-btn">▶</button>
     <button id="shake-btn" title="shake the radio">⌇</button>
   </div>
+</div>
+<div id="layer-knob-wrap">
+  <canvas id="layer-knob-canvas" width="96" height="96"></canvas>
+</div>
 </div>
 
 <div id="sfx-display">
@@ -1898,6 +1919,8 @@ function startEngine(){
   setTimeout(()=>fireEvent().then(()=>scheduleNext()),600);
   applyWeatherToVibe(); scheduleWeatherDrift();
   generateArc(); scheduleEpoch();
+  // Apply knob position to all layer gains
+  setTimeout(() => updateLayerGains(layerLevel), 100);
 }
 
 function stopEngine(){
@@ -2353,9 +2376,150 @@ function stopViz() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// LAYER KNOB
+// ═══════════════════════════════════════════════════════════
+let layerLevel = 1.0; // 0=noise only → 1=all layers
+let _knobDragging = false, _knobLastY = 0;
+
+// Canvas geometry
+const KN_SIZE  = 96;
+const KN_CX    = KN_SIZE / 2;   // 48
+const KN_CY    = KN_SIZE / 2;   // 48
+const KN_R     = 28;             // groove arc radius
+const KN_R_DOT = 20;             // indicator dot radius
+const KN_R_LBL = 42;             // label radius
+const KN_START = 3 * Math.PI / 4;         // 135° canvas = 7:30 clock (min position)
+const KN_RANGE = 3 * Math.PI / 2;         // 270° total sweep
+
+const KN_TICKS = [
+  { level:0,   label:'noise' },
+  { level:1/3, label:'+sfx'  },
+  { level:2/3, label:'+mel'  },
+  { level:1,   label:'+pad'  },
+];
+
+function drawKnob() {
+  const canvas = document.getElementById('layer-knob-canvas');
+  if (!canvas) return;
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, KN_SIZE, KN_SIZE);
+
+  const level = layerLevel;
+  const currentA = KN_START + level * KN_RANGE;
+
+  // Outer shadow ring
+  c.beginPath(); c.arc(KN_CX, KN_CY, KN_R + 7, 0, Math.PI * 2);
+  c.fillStyle = '#0e0d0b'; c.fill();
+  c.strokeStyle = '#1e1c18'; c.lineWidth = 1; c.stroke();
+
+  // Inner knob face
+  c.beginPath(); c.arc(KN_CX, KN_CY, KN_R + 2, 0, Math.PI * 2);
+  const grad = c.createRadialGradient(KN_CX - 5, KN_CY - 5, 2, KN_CX, KN_CY, KN_R + 2);
+  grad.addColorStop(0, '#2a2620');
+  grad.addColorStop(1, '#141210');
+  c.fillStyle = grad; c.fill();
+
+  // Groove (full arc, dark track)
+  c.beginPath(); c.arc(KN_CX, KN_CY, KN_R, KN_START, KN_START + KN_RANGE, false);
+  c.strokeStyle = '#2a2418'; c.lineWidth = 5; c.lineCap = 'round'; c.stroke();
+
+  // Filled arc (amber — active range)
+  if (level > 0.005) {
+    c.beginPath(); c.arc(KN_CX, KN_CY, KN_R, KN_START, currentA, false);
+    // gradient: warm amber at start → brighter warm at end
+    const arcGrad = c.createLinearGradient(
+      KN_CX + KN_R * Math.cos(KN_START), KN_CY + KN_R * Math.sin(KN_START),
+      KN_CX + KN_R * Math.cos(currentA),  KN_CY + KN_R * Math.sin(currentA)
+    );
+    arcGrad.addColorStop(0, '#6a4020');
+    arcGrad.addColorStop(1, '#e8a060');
+    c.strokeStyle = arcGrad; c.lineWidth = 5; c.lineCap = 'round'; c.stroke();
+  }
+
+  // Tick dots + labels
+  c.font = '700 7px IBM Plex Mono, monospace';
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  KN_TICKS.forEach(tick => {
+    const ta = KN_START + tick.level * KN_RANGE;
+    const active = level >= tick.level - 0.02;
+    // Tick dot on groove
+    const tx = KN_CX + KN_R * Math.cos(ta);
+    const ty = KN_CY + KN_R * Math.sin(ta);
+    c.beginPath(); c.arc(tx, ty, 2.5, 0, Math.PI * 2);
+    c.fillStyle = active ? '#e8c060' : '#302820'; c.fill();
+    // Label outside
+    const lx = KN_CX + KN_R_LBL * Math.cos(ta);
+    const ly = KN_CY + KN_R_LBL * Math.sin(ta);
+    c.fillStyle = active ? '#b8a880' : '#403828';
+    c.fillText(tick.label, lx, ly);
+  });
+
+  // Indicator dot
+  const dotX = KN_CX + KN_R_DOT * Math.cos(currentA);
+  const dotY = KN_CY + KN_R_DOT * Math.sin(currentA);
+  c.beginPath(); c.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+  c.fillStyle = '#f4e4b0'; c.fill();
+  // Glow
+  c.beginPath(); c.arc(dotX, dotY, 6, 0, Math.PI * 2);
+  c.fillStyle = 'rgba(244,228,176,0.15)'; c.fill();
+}
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+function updateLayerGains(level) {
+  layerLevel = level;
+  drawKnob();
+  if (!ctx) return;
+  const now = ctx.currentTime, tc = 0.3;
+
+  // Each layer fades in over a 0.18-wide zone:
+  // sfx+ghost: 0.22 → 0.40  |  melody: 0.50 → 0.68  |  pad: 0.78 → 0.96
+  const sfxMult   = clamp01((level - 0.22) / 0.18);
+  const ghostMult = sfxMult;
+  const melMult   = clamp01((level - 0.50) / 0.18);
+  const padMult   = clamp01((level - 0.78) / 0.18);
+
+  const sfxBase   = parseFloat(document.getElementById('mix-sfx')?.value   ?? 0.75);
+  const ghostBase = parseFloat(document.getElementById('ghost-slider')?.value ?? 0.35);
+  const melBase   = parseFloat(document.getElementById('mix-mel')?.value   ?? 0.85);
+  const padBase   = parseFloat(document.getElementById('mix-pad')?.value   ?? 0.70);
+
+  if (sfxGain)         sfxGain.gain.setTargetAtTime(sfxBase * sfxMult, now, tc);
+  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(ghostBase * ghostMult, now, tc);
+  if (melodyGain)      melodyGain.gain.setTargetAtTime(melBase * melMult, now, tc);
+  if (padGain)         padGain.gain.setTargetAtTime(padBase * padMult, now, tc);
+}
+
+// Drag handling — vertical drag: up = more, down = less
+(function() {
+  const canvas = document.getElementById('layer-knob-canvas');
+  canvas.addEventListener('mousedown', e => {
+    _knobDragging = true; _knobLastY = e.clientY; e.preventDefault();
+  });
+  canvas.addEventListener('touchstart', e => {
+    _knobDragging = true; _knobLastY = e.touches[0].clientY; e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('mousemove', e => {
+    if (!_knobDragging) return;
+    const dy = _knobLastY - e.clientY;
+    _knobLastY = e.clientY;
+    updateLayerGains(clamp01(layerLevel + dy / 160));
+  });
+  window.addEventListener('touchmove', e => {
+    if (!_knobDragging) return;
+    const dy = _knobLastY - e.touches[0].clientY;
+    _knobLastY = e.touches[0].clientY;
+    updateLayerGains(clamp01(layerLevel + dy / 160));
+  }, { passive: false });
+  window.addEventListener('mouseup',  () => { _knobDragging = false; });
+  window.addEventListener('touchend', () => { _knobDragging = false; });
+})();
+
+// ═══════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════
 initWorld('water');
+drawKnob();
 
 document.querySelectorAll('.world-btn').forEach(btn=>
   btn.addEventListener('click',()=>{ if(S.running) stopEngine(); initWorld(btn.dataset.world); })
@@ -2365,7 +2529,7 @@ document.getElementById('start-btn').addEventListener('click',()=>S.running?stop
 
 document.getElementById('density-slider').addEventListener('input', e=>{ S.density=parseFloat(e.target.value); });
 document.getElementById('vol-slider').addEventListener('input', e=>{ if(masterGain) masterGain.gain.setTargetAtTime(parseFloat(e.target.value),ctx.currentTime,0.1); });
-document.getElementById('ghost-slider').addEventListener('input', e=>{ if(ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(parseFloat(e.target.value),ctx.currentTime,0.1); });
+document.getElementById('ghost-slider').addEventListener('input', () => { updateLayerGains(layerLevel); });
 document.getElementById('bpm-slider').addEventListener('input', e=>{ S.bpm=parseInt(e.target.value); document.getElementById('bpm-val').textContent=S.bpm; });
 
 setInterval(()=>{ if(S.running) updateClock(); },1000);
@@ -2376,15 +2540,9 @@ document.getElementById('settings-toggle').addEventListener('click', () => {
 document.getElementById('mix-noise').addEventListener('input', e => {
   if (noiseChGain && ctx) noiseChGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
 });
-document.getElementById('mix-mel').addEventListener('input', e => {
-  if (melodyGain && ctx) melodyGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
-});
-document.getElementById('mix-sfx').addEventListener('input', e => {
-  if (sfxGain && ctx) sfxGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
-});
-document.getElementById('mix-pad').addEventListener('input', e => {
-  if (padGain && ctx) padGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
-});
+document.getElementById('mix-mel').addEventListener('input', () => updateLayerGains(layerLevel));
+document.getElementById('mix-sfx').addEventListener('input', () => updateLayerGains(layerLevel));
+document.getElementById('mix-pad').addEventListener('input', () => updateLayerGains(layerLevel));
 
 // ── Shake button ─────────────────────────────────────────────────
 document.getElementById('shake-btn').addEventListener('click', () => {
