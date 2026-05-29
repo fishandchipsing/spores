@@ -1,0 +1,2985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>murmur radio 01</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a08; --dim: #1a1a16; --muted: #64645a;
+    --text: #d0d0c0; --accent: #e8e8d8; --event: #f4f4ec;
+  }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'IBM Plex Mono', monospace; font-weight: 300;
+    font-size: 13px; line-height: 1.7; overflow: hidden;
+    cursor: default; user-select: none;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 0;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  }
+
+  /* ── World selector ───────────────────────────────────────── */
+  #world-selector {
+    display: flex; gap: 24px; margin-bottom: 20px;
+  }
+  .world-btn {
+    background: none; border: none; color: var(--muted);
+    font-family: inherit; font-size: 10px; font-weight: 300;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    cursor: pointer; padding: 0; transition: color 0.5s; position: relative;
+  }
+  .world-btn::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 0; height: 1px; background: var(--accent); transition: width 0.4s; }
+  .world-btn.active { color: var(--accent); }
+  .world-btn.active::after { width: 100%; }
+  .world-btn:hover { color: var(--text); }
+
+  /* ── Radio row (pill + knob) ──────────────────────────────── */
+  #radio-row {
+    display: flex; align-items: center; gap: 20px;
+  }
+
+  /* ── Layer knob ───────────────────────────────────────────── */
+  #layer-knob-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    flex-shrink: 0;
+  }
+  #layer-knob-canvas {
+    cursor: ns-resize;
+    display: block;
+  }
+  #layer-knob-canvas:active { cursor: grabbing; }
+
+  /* ── Radio pill ───────────────────────────────────────────── */
+  #radio {
+    display: flex; align-items: center;
+    background: #111110;
+    border: 1px solid #222220;
+    border-radius: 52px;
+    width: 580px; height: 90px;
+    overflow: hidden;
+    box-shadow: 0 4px 32px rgba(0,0,0,0.55);
+    flex-shrink: 0;
+  }
+
+  /* ── Circle canvas ─────────────────────────────────────────── */
+  #radio-circle {
+    width: 90px; height: 90px;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+    border-radius: 50%;
+    background: #0a0a08;
+  }
+  #radio-circle::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.6);
+    pointer-events: none; z-index: 2;
+  }
+  #world-canvas { position: absolute; top: 0; left: 0; }
+
+  /* ── Ticker ───────────────────────────────────────────────── */
+  #radio-ticker {
+    flex: 1;
+    overflow: hidden;
+    padding: 0 18px;
+    height: 100%;
+    display: flex; align-items: center;
+    border-left: 1px solid #1c1c18;
+    min-width: 0;
+  }
+  .ticker-mask { overflow: hidden; width: 100%; }
+  #ticker-text {
+    display: inline-block;
+    font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--accent); white-space: nowrap;
+    transform: translateX(0);
+  }
+  #ticker-text.running {
+    animation: ticker-scroll var(--ticker-dur, 18s) linear 0.4s 1 forwards;
+  }
+  @keyframes ticker-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(var(--ticker-shift, -60%)); }
+  }
+
+  /* ── Right controls ────────────────────────────────────────── */
+  #radio-right {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 18px;
+    height: 100%;
+    border-left: 1px solid #1c1c18;
+    flex-shrink: 0;
+  }
+
+  /* Animated bars */
+  #radio-bars { display: flex; align-items: flex-end; gap: 2px; height: 20px; }
+  .rbar {
+    width: 2.5px; background: var(--muted); border-radius: 1px;
+    height: 3px;
+    transition: height 0.2s;
+  }
+  #radio-bars.live .rbar:nth-child(1) { animation: rb1 0.85s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(2) { animation: rb2 0.65s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(3) { animation: rb3 0.95s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(4) { animation: rb4 0.75s ease-in-out infinite alternate; }
+  #radio-bars.live .rbar:nth-child(5) { animation: rb5 1.05s ease-in-out infinite alternate; }
+  @keyframes rb1 { to { height: 14px; } } @keyframes rb2 { to { height: 19px; } }
+  @keyframes rb3 { to { height: 10px; } } @keyframes rb4 { to { height: 17px; } }
+  @keyframes rb5 { to { height: 8px;  } }
+
+  /* Vol */
+  .knob-label { font-size: 8px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; }
+  #vol-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 55px; height: 2px; background: var(--dim);
+    outline: none; border: none; cursor: pointer;
+    border-radius: 1px;
+  }
+  #vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+  }
+
+  /* Start/stop button */
+  #start-btn {
+    width: 26px; height: 26px;
+    background: var(--muted); border: none; border-radius: 4px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--bg); font-size: 9px; font-family: inherit;
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  #start-btn.on { background: var(--accent); }
+  #shake-btn {
+    width: 26px; height: 26px;
+    background: transparent; border: 1px solid var(--muted); border-radius: 4px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 11px; font-family: inherit;
+    transition: color 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+  }
+  #shake-btn:hover { color: var(--accent); border-color: var(--accent); }
+  #shake-btn.shaking { animation: shake-anim 0.45s ease-out; }
+  @keyframes shake-anim {
+    0%  { transform: translateX(0); }
+    15% { transform: translateX(-4px) rotate(-2deg); }
+    30% { transform: translateX(4px)  rotate(2deg); }
+    45% { transform: translateX(-3px) rotate(-1deg); }
+    60% { transform: translateX(3px); }
+    75% { transform: translateX(-2px); }
+    100%{ transform: translateX(0); }
+  }
+
+  /* ── Meta strip below pill ─────────────────────────────────── */
+  #sfx-display {
+    margin-top: 8px;
+    height: 14px;
+    font-size: 9px; letter-spacing: 0.06em;
+    color: var(--text);
+    display: flex; align-items: center; gap: 7px;
+    opacity: 0; transition: opacity 0.25s ease;
+    pointer-events: none;
+    max-width: 580px; overflow: hidden;
+  }
+  #sfx-display.visible { opacity: 1; }
+  .sfx-dir {
+    color: var(--muted); font-size: 8px; flex-shrink: 0;
+  }
+  #sfx-prompt {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ── SFX effect buttons ────────────────────────────────────── */
+  #sfx-fx-row {
+    display: flex; gap: 7px; margin-top: 10px;
+    height: 20px; align-items: center;
+  }
+  .fx-btn {
+    background: none; border: 1px solid var(--muted);
+    color: var(--muted); font-family: inherit; font-size: 9px;
+    font-weight: 300; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 2px 9px 3px; border-radius: 10px; cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    line-height: 1;
+  }
+  .fx-btn:hover { border-color: var(--text); color: var(--text); }
+  .fx-btn.active { border-color: var(--accent); color: var(--accent); }
+
+  #meta {
+    margin-top: 8px;
+    font-size: 9px; color: var(--muted); letter-spacing: 0.08em;
+    display: flex; gap: 12px; align-items: center;
+  }
+  #meta .hl { color: var(--text); }
+  #meta .sep { opacity: 0.3; }
+
+  /* ── Secondary controls (hidden by default, toggle-able) ───── */
+  #secondary {
+    margin-top: 12px;
+    display: none;
+    gap: 20px; align-items: center;
+    font-size: 9px; color: var(--muted);
+  }
+  #secondary.open { display: flex; }
+  .sc-wrap { display: flex; align-items: center; gap: 6px; }
+  .sc-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 60px; height: 2px; background: var(--dim); outline: none; border: none;
+    cursor: pointer; border-radius: 1px;
+  }
+  .sc-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--text); cursor: pointer;
+  }
+  /* ── Mix controls ─────────────────────────────────────────── */
+  #mix {
+    margin-top: 14px;
+    display: flex; gap: 22px; align-items: center;
+  }
+  .mix-row { display: flex; align-items: center; gap: 7px; }
+  .mix-label {
+    font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); width: 38px;
+  }
+  .mix-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 72px; height: 2px; background: var(--dim); outline: none; border: none;
+    cursor: pointer; border-radius: 1px;
+  }
+  .mix-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--text); cursor: pointer;
+  }
+
+  #settings-toggle {
+    margin-top: 10px; background: none; border: none; cursor: pointer;
+    color: var(--muted); font-family: inherit; font-size: 9px;
+    letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.45;
+    transition: opacity 0.3s;
+  }
+  #settings-toggle:hover { opacity: 0.75; }
+
+  /* ── Debug overlay ─────────────────────────────────────────── */
+  #debug-overlay {
+    position: fixed; top: 12px; right: 12px;
+    font-size: 9px; color: var(--muted); line-height: 1.8;
+    pointer-events: none; z-index: 100;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 0;
+  }
+  .dk { opacity: 0.4; margin-right: 6px; }
+  .dv { color: var(--text); opacity: 0.25; transition: opacity 0.5s; }
+
+  /* hidden utility elements */
+  #event-log, #agents-strip, #pulse { display: none; }
+
+  /* ── Side panel ───────────────────────────────────────────── */
+  #panel-toggle {
+    position: fixed; top: 50%; right: 320px;
+    transform: translateY(-50%);
+    width: 18px; height: 44px;
+    background: #0f0f0d; border: 1px solid #1e1e1a; border-right: none;
+    border-radius: 4px 0 0 4px;
+    cursor: pointer; z-index: 201;
+    color: var(--muted); font-size: 8px; font-family: inherit;
+    display: flex; align-items: center; justify-content: center;
+    transition: right 0.3s ease, color 0.2s;
+  }
+  #panel-toggle:hover { color: var(--accent); }
+  #panel-toggle.closed { right: 0; }
+
+  #side-panel {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 320px;
+    background: #111110;
+    border-left: 1px solid #252520;
+    display: flex; flex-direction: column;
+    z-index: 200;
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+    overflow: hidden;
+    /* panel-local palette — brighter than the ambient UI */
+    --p-dim:    #4e4e46;
+    --p-mid:    #7e7e72;
+    --p-text:   #b8b8a8;
+    --p-bright: #deded0;
+    --p-accent: #c8c8b0;
+    --p-sep:    #1e1e1c;
+  }
+  #side-panel.closed { transform: translateX(320px); }
+
+  .panel-section {
+    border-bottom: 1px solid var(--p-sep);
+    padding: 12px 14px;
+    flex-shrink: 0;
+  }
+  .panel-head {
+    font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--p-dim); margin-bottom: 9px;
+  }
+  .panel-kv {
+    display: flex; gap: 8px; margin-bottom: 4px; align-items: baseline;
+  }
+  .panel-k {
+    font-size: 9px; color: var(--p-mid);
+    min-width: 54px; flex-shrink: 0;
+  }
+  .panel-v {
+    font-size: 9px; color: var(--p-bright); letter-spacing: 0.03em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* vibe bars */
+  .vibe-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .vk { font-size: 9px; color: var(--p-mid); min-width: 54px; }
+  .vbar-wrap { flex: 1; height: 2px; background: #252520; border-radius: 1px; overflow: hidden; }
+  .vbar { height: 100%; background: var(--p-text); border-radius: 1px; width: 0%; transition: width 0.6s ease; }
+  .vv { font-size: 9px; color: var(--p-text); min-width: 30px; text-align: right; }
+
+  /* agents list */
+  #panel-agents { max-height: 160px; overflow-y: auto; }
+  #panel-agents::-webkit-scrollbar { width: 2px; }
+  #panel-agents::-webkit-scrollbar-thumb { background: var(--p-dim); }
+  .pa-row {
+    display: flex; gap: 10px; margin-bottom: 5px; align-items: baseline;
+    font-size: 9px; line-height: 1.55;
+  }
+  .pa-name { color: var(--p-accent); min-width: 72px; flex-shrink: 0; }
+  .pa-state { color: var(--p-mid); overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pa-row.lit .pa-name { color: #e8e8d0; }
+  .pa-row.lit .pa-state { color: var(--p-text); }
+
+  /* log */
+  #panel-log { flex: 1; overflow-y: auto; min-height: 0; }
+  #panel-log::-webkit-scrollbar { width: 2px; }
+  #panel-log::-webkit-scrollbar-thumb { background: var(--p-dim); }
+  #pl-list { padding: 0 14px 12px; }
+
+  .pl-entry {
+    border-bottom: 1px solid var(--p-sep);
+    padding: 10px 0 8px;
+    font-size: 10px; line-height: 1.6;
+  }
+  .pl-entry:last-child { border-bottom: none; }
+  .pl-header { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; flex-wrap: wrap; }
+  .pl-time { color: var(--p-dim); font-size: 9px; }
+  .pl-type {
+    font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 2px;
+  }
+  .pl-type.moment      { background: #1e2818; color: #96c870; }
+  .pl-type.conflict    { background: #281818; color: #c87070; }
+  .pl-type.interaction { background: #181e28; color: #7096c8; }
+  .pl-type.shift       { background: #26261a; color: #c8c870; }
+  .pl-type.passing     { background: #1e1e1e; color: #888888; }
+  .pl-type.distant     { background: #1a1a1a; color: #666666; }
+  .pl-type.residue     { background: #1e1828; color: #9070c8; }
+  .pl-agent { color: var(--p-accent); font-size: 10px; font-weight: 400; }
+  .pl-desc { color: var(--p-bright); margin-bottom: 6px; line-height: 1.6; }
+  .pl-sounds { color: var(--p-mid); font-style: italic; margin-bottom: 6px; font-size: 9px; line-height: 1.55; }
+
+  .pl-expand {
+    background: none; border: none; cursor: pointer;
+    font-family: inherit; font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--p-mid); padding: 0; margin-right: 12px;
+    transition: color 0.15s;
+  }
+  .pl-expand:hover { color: var(--p-bright); }
+  .pl-detail {
+    display: none; margin-top: 7px;
+    background: #0d0d0c; border: 1px solid #1e1e1c;
+    border-radius: 3px; padding: 9px;
+    color: var(--p-mid); font-size: 8.5px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 240px; overflow-y: auto;
+  }
+  .pl-detail.open { display: block; }
+  .pl-detail::-webkit-scrollbar { width: 2px; }
+  .pl-detail::-webkit-scrollbar-thumb { background: var(--p-dim); }
+
+
+  /* arc panel */
+  .arc-epoch-label { font-size:8px; color:var(--p-dim); letter-spacing:0.06em; }
+  .arc-title {
+    font-size:11px; color:var(--p-bright); letter-spacing:0.02em;
+    margin-bottom:5px; line-height:1.4;
+  }
+  .arc-title.generating { color:var(--p-dim); font-style:italic; }
+  .arc-logline {
+    font-size:9px; color:var(--p-mid); font-style:italic;
+    line-height:1.55; margin-bottom:9px;
+  }
+  .arc-dots { display:flex; gap:5px; align-items:center; margin-bottom:6px; }
+  .arc-dot {
+    width:6px; height:6px; border-radius:50%; flex-shrink:0;
+    background:var(--p-sep); transition:background 0.4s;
+  }
+  .arc-dot.done   { background:var(--p-mid); }
+  .arc-dot.active { background:var(--p-bright); box-shadow:0 0 4px var(--p-bright); }
+  .arc-beat-desc {
+    font-size:8.5px; color:var(--p-text); line-height:1.55;
+    padding-left:2px;
+  }
+  .arc-epoch-progress {
+    margin-top:8px; height:2px; background:var(--p-sep); border-radius:1px; overflow:hidden;
+  }
+  .arc-epoch-bar {
+    height:100%; background:var(--p-dim); border-radius:1px;
+    width:0%; transition:width 0.8s linear;
+  }
+  /* sounds list */
+  #panel-sounds { max-height: 170px; overflow-y: auto; }
+  #panel-sounds::-webkit-scrollbar { width: 2px; }
+  #panel-sounds::-webkit-scrollbar-thumb { background: var(--p-dim); }
+  .ps-head-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 9px;
+  }
+  .ps-cache-count {
+    font-size: 8px; color: var(--p-dim); letter-spacing: 0.06em;
+  }
+  .sound-entry {
+    display: flex; gap: 7px; align-items: baseline;
+    font-size: 9px; line-height: 1.5; margin-bottom: 5px;
+    opacity: 1; transition: opacity 3s ease 2s;
+  }
+  .sound-entry.fading { opacity: 0.35; }
+  .se-time { color: var(--p-dim); flex-shrink: 0; font-size: 8px; }
+  .se-kind {
+    flex-shrink: 0; font-size: 7px; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 2px;
+  }
+  .se-kind.live  { background: #18221a; color: #80b870; }
+  .se-kind.cache { background: #181e22; color: #6090b8; }
+  .se-kind.ghost { background: #1a1820; color: #8070a8; }
+  .se-kind.shake { background: #221818; color: #b07050; }
+  .se-dir { color: var(--p-dim); flex-shrink: 0; }
+  .se-text {
+    color: var(--p-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+  }
+  .se-text.filename { color: var(--p-mid); font-style: italic; }
+</style>
+</head>
+<body>
+
+
+<div id="debug-overlay">
+  <div><span class="dk">ghost</span><span class="dv" id="dbg-ghost">—</span></div>
+  <div><span class="dk">sfx</span><span class="dv" id="dbg-sfx">—</span></div>
+  <div><span class="dk">shadow</span><span class="dv" id="dbg-shadow">—</span></div>
+  <div><span class="dk">mood</span><span class="dv" id="dbg-mood">—</span></div>
+</div>
+
+<div id="world-selector">
+  <button class="world-btn active" data-world="water">water</button>
+  <button class="world-btn" data-world="city">city</button>
+  <button class="world-btn" data-world="forest">forest</button>
+</div>
+
+<div id="radio-row">
+<div id="radio">
+  <div id="radio-circle">
+    <canvas id="world-canvas"></canvas>
+  </div>
+  <div id="radio-ticker">
+    <div class="ticker-mask">
+      <span id="ticker-text">—</span>
+    </div>
+  </div>
+  <div id="radio-right">
+    <div id="radio-bars">
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+      <div class="rbar"></div>
+    </div>
+    <div class="sc-wrap" style="gap:6px">
+      <span class="knob-label">vol</span>
+      <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="0.5">
+    </div>
+    <button id="start-btn">▶</button>
+    <button id="shake-btn" title="shake the radio">⌇</button>
+  </div>
+</div>
+<div id="layer-knob-wrap">
+  <canvas id="layer-knob-canvas" width="96" height="96"></canvas>
+</div>
+</div>
+
+<div id="sfx-display">
+  <span class="sfx-dir" id="sfx-dir">♪</span>
+  <span id="sfx-prompt"></span>
+</div>
+
+<div id="sfx-fx-row">
+  <button class="fx-btn" data-fx="reverb"   title="room reverb — enclosed, boxy">reverb</button>
+  <button class="fx-btn" data-fx="vocoder"  title="ring modulator — metallic, tonal">vocoder</button>
+  <button class="fx-btn" data-fx="granular" title="granular scatter — dissolves into texture">granular</button>
+  <button class="fx-btn" data-fx="lofi"     title="lo-fi tape — bitcrushed, degraded, warm">lo-fi</button>
+</div>
+
+<div id="meta">
+  <span class="hl" id="tr-world">water</span>
+  <span class="sep">·</span>
+  <span id="tr-weather">—</span>
+  <span class="sep">·</span>
+  <span id="tr-clock">—</span>
+  <span class="sep">·</span>
+  <span id="countdown"></span>
+</div>
+
+<div id="mix">
+  <div class="mix-row">
+    <span class="mix-label">noise</span>
+    <input type="range" id="mix-noise" class="mix-slider" min="0" max="1" step="0.01" value="0.6">
+  </div>
+  <div class="mix-row">
+    <span class="mix-label">sfx</span>
+    <input type="range" id="mix-sfx" class="mix-slider" min="0" max="1" step="0.01" value="0.75">
+  </div>
+  <div class="mix-row">
+    <span class="mix-label">shadow</span>
+    <input type="range" id="mix-shadow" class="mix-slider" min="0" max="1" step="0.01" value="0.72">
+  </div>
+  <div class="mix-row">
+    <span class="mix-label">mood</span>
+    <input type="range" id="mix-mood" class="mix-slider" min="0" max="1" step="0.01" value="0.58">
+  </div>
+</div>
+
+<div id="secondary">
+  <div class="sc-wrap">
+    <span class="knob-label">density</span>
+    <input type="range" id="density-slider" class="sc-slider" min="0.25" max="3" step="0.05" value="1">
+  </div>
+  <div class="sc-wrap">
+    <span class="knob-label">echo</span>
+    <input type="range" id="ghost-slider" class="sc-slider" min="0" max="1" step="0.01" value="0.35">
+  </div>
+</div>
+
+<button id="settings-toggle">· · ·</button>
+
+<!-- ── Side panel ─────────────────────────────────────── -->
+<button id="panel-toggle" title="toggle info panel">◂</button>
+<div id="side-panel">
+
+  <div class="panel-section">
+    <div class="panel-head">state</div>
+    <div class="panel-kv"><span class="panel-k">world</span><span class="panel-v" id="ps-world">—</span></div>
+    <div class="panel-kv"><span class="panel-k">weather</span><span class="panel-v" id="ps-weather">—</span></div>
+    <div class="panel-kv"><span class="panel-k">time</span><span class="panel-v" id="ps-time">—</span></div>
+    <div class="panel-kv"><span class="panel-k">events</span><span class="panel-v" id="ps-events">0</span></div>
+  </div>
+
+  <div class="panel-section" id="panel-arc">
+    <div class="ps-head-row">
+      <div class="panel-head" style="margin-bottom:0">arc</div>
+      <span class="arc-epoch-label" id="pa-epoch">—</span>
+    </div>
+    <div id="pa-title" class="arc-title generating">waiting to start</div>
+    <div id="pa-logline" class="arc-logline"></div>
+    <div class="arc-dots" id="pa-dots"></div>
+    <div class="arc-beat-desc" id="pa-beat-desc"></div>
+    <div class="arc-epoch-progress"><div class="arc-epoch-bar" id="pa-epoch-bar"></div></div>
+  </div>
+
+    <div class="panel-section">
+    <div class="panel-head">vibe</div>
+    <div class="vibe-row">
+      <span class="vk">activity</span>
+      <div class="vbar-wrap"><div class="vbar" id="vb-activity"></div></div>
+      <span class="vv" id="vv-activity">0.0</span>
+    </div>
+    <div class="vibe-row">
+      <span class="vk">tension</span>
+      <div class="vbar-wrap"><div class="vbar" id="vb-tension"></div></div>
+      <span class="vv" id="vv-tension">0.0</span>
+    </div>
+    <div class="vibe-row">
+      <span class="vk">register</span>
+      <div class="vbar-wrap"><div class="vbar" id="vb-register"></div></div>
+      <span class="vv" id="vv-register">0.0</span>
+    </div>
+  </div>
+
+  <div class="panel-section" id="panel-agents">
+    <div class="panel-head">agents</div>
+    <div id="pa-list"></div>
+  </div>
+
+  <div class="panel-section" id="panel-sounds" style="flex-shrink:0;">
+    <div class="ps-head-row">
+      <div class="panel-head" style="margin-bottom:0">sounds</div>
+      <span class="ps-cache-count" id="ps-cache-count">cache: 0</span>
+    </div>
+    <div id="ps-list"></div>
+  </div>
+
+  <div class="panel-section" id="panel-log" style="flex:1; overflow-y:auto; min-height:0; border-bottom:none;">
+    <div class="panel-head" style="padding: 0; margin-bottom:0;">log</div>
+    <div id="pl-list"></div>
+  </div>
+
+</div>
+
+<!-- Hidden utility elements needed by JS -->
+<div style="display:none" aria-hidden="true">
+  <span id="api-stat"></span>
+  <div id="event-log"></div>
+  <div id="agents-strip"></div>
+  <div id="pulse"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// WORLDS
+// ═══════════════════════════════════════════════════════════
+const WORLDS = {
+
+  water: {
+    label: 'water',
+    weathers: ['glassy still','light swell','choppy','incoming storm','steady rain'],
+    times:    ['pre-dawn','early morning','midday','late afternoon','dusk','night'],
+    ambient: { noiseColor:'brown', rumble:{freq:60,gain:0.08}, shimmer:{freq:900,q:0.4,gain:0.012}, lfo:{rate:0.08,depth:0.18} },
+    agents: [
+      { id:'heron',        label:'heron',         desc:'solitary, hunts from stillness, strikes fast, territorial of its bank',                         state:'motionless at water edge' },
+      { id:'otter',        label:'otter',          desc:'splashing, chewing audibly, high whistle, moves unpredictably along the bank',                  state:'somewhere on the near bank' },
+      { id:'swan',         label:'swan',           desc:'mostly silent but takeoff wingbeat is enormous, displaces every other sound',                   state:'resting on far water' },
+      { id:'coot',         label:'coot',           desc:'aggressive, repetitive single-note call, skirmishes with other coots over territory',           state:'patrolling mid-water' },
+      { id:'water_rail',   label:'water rail',     desc:'hidden deep in reeds — bizarre pig-like squeal, rarely but memorably',                         state:'concealed in reeds' },
+      { id:'moorhen',      label:'moorhen',        desc:'nervous, constant soft clucking, panics easily and runs across the surface',                   state:'close to reed edge' },
+      { id:'kingfisher',   label:'kingfisher',     desc:'piercing call then a dive, surgical and fast, gone before you registered it',                  state:'perched unseen upstream' },
+      { id:'frogs',        label:'frogs',          desc:'colony in reeds, chorus rises and falls, instantly silenced by disturbance',                    state:'calling softly' },
+      { id:'fish',         label:'fish',           desc:'shoal moving beneath surface, occasional feeding frenzies, surface breaks',                     state:'drifting midwater' },
+      { id:'reed_warblers',label:'reed warblers',  desc:'dense chattering chorus from inside the reeds, rises and falls with wind and disturbance',     state:'singing low' },
+      { id:'midges',       label:'midges',         desc:'thin high collective hum over the surface, thickens in warm still air, disappears in wind',    state:'faint in the air' },
+      { id:'wind',         label:'wind',           desc:'moves through reeds and across the surface, shifts direction, stirs everything',                state:'barely present' },
+      { id:'ducks',        label:'ducks',          desc:'small group, social, dabbling, squabbling, landing noisily, suddenly taking flight',            state:'resting on far bank' },
+      { id:'rain',         label:'rain',           desc:'arrives gradually or suddenly, drums on every surface, changes everything else',                state:'absent' },
+      { id:'fisherman',    label:'fisherman',      desc:'distant, mostly silent — occasional tackle sound, a cough, a low radio, a slow movement',      state:'settled on far bank, quiet' },
+      { id:'drain',        label:'drain / sluice', desc:'man-made control — a trickle normally, becomes a rush after rain, gurgles and echoes',         state:'slow trickle' },
+      { id:'bat',          label:'bat',            desc:'nocturnal, echolocation clicks over the surface, erratic darting flight, hunting midges',       state:'inactive — daytime' },
+      { id:'willows',      label:'willows',        desc:'weeping willows at the bank — trail in water, wind moves them differently from reeds, creaking', state:'still' },
+      { id:'woodpigeon',   label:'woodpigeon',     desc:'distant cooing from treeline beyond the far bank, drowsy and repetitive, occasionally takes flight', state:'cooing in far treeline' },
+    ],
+    systemPrompt: `You are a world engine for a living pond and its banks, edged by trees and marsh. Agents have territories, behaviors, and relationships.
+
+Agents interact: heron strike silences frogs and coots. Swan takeoff displaces everything. Kingfisher dart scatters surface fish. Wind stirs willows and reeds together — they sound different. Rain activates drain. Otter surprises moorhen. Coot skirmishes when territory is crossed. Water rail never leaves reeds — heard but never seen. Midges thicken in warm still air, gone in wind. Bat only at dusk or night, hunting midges. Woodpigeon startles when something large moves. Willows creak in sudden wind gusts.
+
+When two agents with conflicting territory are close, generate "conflict" type: coot vs moorhen, coot vs coot, otter chasing fish to surface.
+
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain absent unless weather says rain. Bat absent unless dusk or night. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  },
+
+  city: {
+    label: 'city',
+    weathers: ['clear','overcast','light rain','heavy rain','windy','fog'],
+    times:    ['early morning','rush hour','midday','afternoon','evening rush','night'],
+    ambient: { noiseColor:'pink', rumble:{freq:75,gain:0.09}, shimmer:{freq:280,q:1.2,gain:0.012}, lfo:{rate:0.022,depth:0.04} },
+    agents: [
+      { id:'pedestrian',   label:'pedestrian stream', desc:'continuous foot traffic on pavement — heels, soles, shuffling, conversations in passing, shopping bags', state:'moderate flow both directions' },
+      { id:'cyclist',      label:'cyclist',           desc:'wheels on tarmac, bell when weaving through pedestrians, chain, gear shift, acceleration burst', state:'approaching from distance' },
+      { id:'car',          label:'car',               desc:'engine idle at lights, acceleration, door slam, horn — character changes with weather and time of day', state:'passing' },
+      { id:'tram',         label:'tram',              desc:'iron wheels on rail, electric overhead hum, bell at stop, doors opening and closing, brief crowd movement', state:'between stops' },
+      { id:'pigeons',      label:'pigeons',           desc:'collective wing burst from ledge, cooing, settling, scattering when alarmed by pedestrian or vehicle', state:'settled on ledge above' },
+      { id:'busker',       label:'busker',            desc:'music bleeding from an underpass or arcade — instrument changes by day. Coins in case. Echo from the arcade roof', state:'playing, few listeners' },
+      { id:'cafe',         label:'café',              desc:'espresso machine burst, cups clinking, outdoor chairs scraping, brief laughter, coffee order at window', state:'steady trade' },
+      { id:'vendor',       label:'vendor',            desc:'newspaper shout, market stall call, pricing exchange, cart wheels on stone, till receipt', state:'calling intermittently' },
+      { id:'construction', label:'construction',      desc:'pneumatic drill, scaffold clanging, cement mixer, shouted instruction, reversing beep, abrupt silence', state:'active nearby' },
+      { id:'shopkeeper',   label:'shopkeeper',        desc:'door buzzer as customer enters, shutter rolling, stock movement, brief exchange, bag rustle', state:'quiet' },
+      { id:'argument',     label:'argument',          desc:'sudden raised voices, footsteps retreating fast, then silence — nearby pedestrians slow', state:'absent' },
+      { id:'phone_call',   label:'phone call',        desc:'one-sided loud conversation while walking — pacing footsteps, pause, laugh, hang up, then quiet', state:'absent' },
+      { id:'delivery',     label:'delivery',          desc:'trolley wheels on kerb edge, hand truck banging, van engine idling, package dropped on step, buzzer press', state:'elsewhere' },
+      { id:'rain_city',    label:'rain',              desc:'rain on shop awnings, drain gurgle, umbrellas snapping open, running footsteps for cover, puddle splash', state:'absent' },
+      { id:'wind_city',    label:'wind',              desc:'gust channelled between buildings — loose shop sign rattling, newspaper lifted, awning flap, brief chill silence', state:'still' },
+      { id:'sparrows',   label:'sparrows',   desc:'small flock chattering in a street tree — bursting into flight when startled by a vehicle or pedestrian, settling back within seconds', state:'flitting in plane tree above' },
+      { id:'cat',        label:'cat',         desc:'on a wall or bin lid — watching everything silently, a sudden territorial yowl at night, scrambling quietly down', state:'on a wall nearby, still' },
+      { id:'dog',        label:'dog',         desc:'on a lead with owner — excited bark at a passing dog, collar and lead jangle, paws on tarmac, a sudden lunge and correction', state:'passing with owner' },
+      { id:'urban_fox',  label:'urban fox',   desc:'night creature — clattering bin lids, soft paws on pavement, a sudden piercing screech-bark that cuts through the quiet street', state:'absent — daytime' },
+    ],
+    systemPrompt: `You are a world engine for a living city street. Sound events emerge from what agents are DOING and how they affect each other.
+
+Agents interact: construction noise drowns out busker — busker moves when drill starts. Tram arrival scatters pigeons and pauses pedestrian flow. Argument draws nearby phone_call to silence. Delivery blocks cyclist, causing bell and sharp exchange. Rain triggers umbrella cascade through pedestrian stream. Café becomes audible when construction pauses. Vendor calls louder when tram passes. Shopkeeper reacts to nearby argument.
+
+Time of day matters: early morning — cyclist and vendor dominate, footsteps echo. Rush hour — tram, pedestrian, car all layered dense. Night — busker echoes further, single footsteps, argument carries.
+
+When two agents directly interact, generate "conflict" type: cyclist vs pedestrian near-miss, vendor vs shopkeeper territory dispute, construction vs café complaint.
+
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind only in matching weather. Tram more frequent at rush hour. Night makes single sounds more prominent. Vary type: distant/passing/moment/shift/interaction/residue/conflict Sparrows burst from trees when tram arrives or construction starts. Cat tracks dog movements, yowls when cornered. Urban fox only at night — bins and empty streets. Dog pulls toward other animals.`
+  },
+
+  forest: {
+    label: 'forest',
+    weathers: ['dry still','overcast','light rain','heavy rain','after rain','frost'],
+    times:    ['pre-dawn','dawn chorus','morning','midday','afternoon','dusk','night'],
+    ambient: { noiseColor:'brown', rumble:{freq:90,gain:0.04}, shimmer:{freq:1800,q:0.5,gain:0.012}, lfo:{rate:0.05,depth:0.22} },
+    agents: [
+      { id:'woodpecker',   label:'woodpecker',   desc:'drums hard against dead wood in short bursts, stops abruptly, listens, drums again — territorial against any answering tap', state:'drumming high up' },
+      { id:'owl',          label:'owl',           desc:'nocturnal — territorial hoot carries far through still air, silent flight, hunts only at dusk and night. Daytime: completely silent', state:'roosting, silent' },
+      { id:'deer',         label:'deer',          desc:'slow deliberate footsteps on leaf litter, one snapping twig, full freeze at any sudden disturbance', state:'moving through understory' },
+      { id:'crow',         label:'crow',          desc:'harsh cawing from upper canopy, mob behaviour when a predator is spotted — alarm spreads tree to tree', state:'perched in high canopy' },
+      { id:'jay',          label:'jay',           desc:'loud screeching alarm, mimics buzzard when nervous, betrays the deer\'s position — explosive and unreliable', state:'watching from oak' },
+      { id:'squirrel',     label:'squirrel',      desc:'chattering scolding call, leaping between branches shakes the whole canopy, acorn dropped hard to ground', state:'foraging in upper branches' },
+      { id:'wind_canopy',  label:'wind',          desc:'arrives in the high canopy first — a slow roar above before it reaches the forest floor, bends the crowns in waves', state:'still' },
+      { id:'leaves',       label:'leaves',        desc:'dry leaf litter announces every footstep. Rain hits the canopy in layers: high crown first, then midlayer, then the floor', state:'dry and deep' },
+      { id:'stream',       label:'stream',        desc:'distant water over stones, rises after rain. Muffled by trees, heard only in gaps of silence', state:'low trickle, far off' },
+      { id:'fox',          label:'fox',           desc:'usually silent — a soft careful footstep on dry leaves, or at night a single sharp bark that cuts through everything', state:'elsewhere' },
+      { id:'insects',      label:'insects',       desc:'summer hum of flies and bees in warm light patches. Disappears completely in cold, rain, or after dark', state:'faint in a clearing' },
+      { id:'treecreeper',  label:'treecreeper',   desc:'thin high-pitched call, spirals up bark probing for insects, almost inaudible from more than a few metres', state:'on oak trunk nearby' },
+      { id:'woodmice',     label:'woodmice',      desc:'tiny scurrying in dry leaves, disturbs the litter without warning, gone before it fully registers', state:'hidden below roots' },
+      { id:'rain_forest',  label:'rain',          desc:'hits the high canopy first — a distant roar, then arrives in layers below. Drips from leaves long after it stops. Changes everything', state:'absent' },
+    ],
+    systemPrompt: `You are a world engine for a living broadleaf forest. Sound events emerge from what agents are DOING and how they interact across layers — canopy, understory, forest floor.
+
+Agents interact: Jay alarm call reveals the deer. Woodpecker drumming interrupted by wind moving the tree. Crow mobbing drives fox through the understory — deer hears and freezes. Stream rises audibly after rain. Squirrel dropping acorn startles woodmice below. Owl is silent in daylight — only calls at dusk and night. Wind moves canopy before it reaches the floor — two arrivals. Rain hits canopy first then floor — two separate sound events. Insects disappear in cold or rain. Leaves are the floor — every footstep and drip lands there.
+
+When two agents directly interact, generate "conflict" type: crow mobbing owl at its roost, jay betraying deer to fox, two squirrels chasing along a branch.
+
+RULES: 1 sentence — only what is heard. Evolve agent states. Rain and frost only in matching weather. Owl only at dusk or night. Insects only in warm daylight. Let the forest have long silences — the quiet is part of it. Vary type: distant/passing/moment/shift/interaction/residue/conflict`
+  }
+
+};
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  world:'water', running:false,
+  bpm:80,
+  weather:'', timeOfDay:'',
+  agentStates:{}, recentEvents:[],
+  eventCount:0, startTime:null,
+  nextAt:null, nextTimeout:null, cdInterval:null,
+  density: 1,
+  weatherTimeout: null,
+  arc: {
+    title:'', logline:'', beats:[], beatIdx:0, beatEvents:0,
+    epochIdx:0, prevTitle:'', prevLogline:'',
+    generating:false, ready:false, epochTimer:null,
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// WEB AUDIO
+// ═══════════════════════════════════════════════════════════
+let ctx, masterGain, ambGain;
+let noiseSource, noiseFilter, lfoNode, lfoGain;
+let noiseSource2, lfoNode2;
+let noiseChGain = null, sfxGain = null, shadowGain = null, moodGain = null;
+
+function buildNoise(type) {
+  const bufLen = ctx.sampleRate * 4;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  if (type === 'brown') {
+    let last = 0;
+    for (let i = 0; i < bufLen; i++) {
+      const w = Math.random() * 2 - 1;
+      data[i] = (last + 0.02 * w) / 1.02; last = data[i]; data[i] *= 3.5;
+    }
+  } else {
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for (let i = 0; i < bufLen; i++) {
+      const w = Math.random() * 2 - 1;
+      b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+      b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+      b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+      data[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+    }
+  }
+  const src = ctx.createBufferSource(); src.buffer=buf; src.loop=true; return src;
+}
+
+function startAmbient(world) {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state==='suspended') ctx.resume();
+  stopAmbient();
+  const p = WORLDS[world].ambient;
+
+  masterGain = ctx.createGain();
+  masterGain.gain.value = parseFloat(document.getElementById('vol-slider').value);
+  masterGain.connect(ctx.destination);
+
+  noiseChGain = ctx.createGain();
+  noiseChGain.gain.value = parseFloat(document.getElementById('mix-noise')?.value ?? 0.6);
+  noiseChGain.connect(masterGain);
+
+  sfxGain = ctx.createGain();
+  sfxGain.gain.value = parseFloat(document.getElementById('mix-sfx')?.value ?? 0.75);
+  sfxGain.connect(masterGain);
+
+  ambGain = ctx.createGain(); ambGain.gain.value=0; ambGain.connect(noiseChGain);
+
+  noiseSource = buildNoise(p.noiseColor);
+  const ls = ctx.createBiquadFilter(); ls.type='lowshelf'; ls.frequency.value=p.rumble.freq; ls.gain.value=14;
+  noiseFilter = ctx.createBiquadFilter(); noiseFilter.type='bandpass'; noiseFilter.frequency.value=p.shimmer.freq; noiseFilter.Q.value=p.shimmer.q;
+  noiseSource.connect(ls); ls.connect(noiseFilter); noiseFilter.connect(ambGain);
+
+  lfoNode = ctx.createOscillator(); lfoNode.type='sine'; lfoNode.frequency.value=p.lfo.rate;
+  lfoGain = ctx.createGain(); lfoGain.gain.value=p.lfo.depth;
+  lfoNode.connect(lfoGain); lfoGain.connect(ambGain.gain);
+
+  noiseSource2 = buildNoise(p.noiseColor);
+  const ls2 = ctx.createBiquadFilter(); ls2.type='lowshelf'; ls2.frequency.value=p.rumble.freq*0.7; ls2.gain.value=10;
+  const nf2  = ctx.createBiquadFilter(); nf2.type='bandpass'; nf2.frequency.value=p.shimmer.freq*1.85; nf2.Q.value=p.shimmer.q*1.6;
+  const lg2  = ctx.createGain(); lg2.gain.value=0;
+  noiseSource2.connect(ls2); ls2.connect(nf2); nf2.connect(lg2); lg2.connect(ambGain);
+
+  lfoNode2 = ctx.createOscillator(); lfoNode2.type='sine'; lfoNode2.frequency.value=p.lfo.rate*1.618;
+  const lf2 = ctx.createGain(); lf2.gain.value=p.lfo.depth*0.65;
+  lfoNode2.connect(lf2); lf2.connect(lg2.gain);
+
+  noiseSource.start(); noiseSource2.start(); lfoNode.start(); lfoNode2.start();
+  ambGain.gain.setTargetAtTime(0.55, ctx.currentTime, 2.5);
+  lg2.gain.setTargetAtTime(0.32, ctx.currentTime, 3.5);
+
+  let fw = setInterval(() => {
+    if (!noiseFilter) { clearInterval(fw); return; }
+    noiseFilter.frequency.setTargetAtTime(p.shimmer.freq*(0.75+Math.random()*0.5), ctx.currentTime, 6);
+  }, 8000);
+}
+
+function stopAmbient() {
+  try { noiseSource  && noiseSource.stop();  } catch(e){}
+  try { noiseSource2 && noiseSource2.stop(); } catch(e){}
+  try { lfoNode      && lfoNode.stop();      } catch(e){}
+  try { lfoNode2     && lfoNode2.stop();     } catch(e){}
+  noiseSource=noiseSource2=lfoNode=lfoNode2=null;
+  if (ambGain)     { ambGain.disconnect();     ambGain=null; }
+  if (noiseChGain) { noiseChGain.disconnect(); noiseChGain=null; }
+  if (sfxGain)     { sfxGain.disconnect();     sfxGain=null; }
+  _sfxConvolver = null; // invalidate shared reverb IR
+}
+
+document.getElementById('vol-slider').addEventListener('input', e => {
+  if (masterGain) masterGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
+});
+
+// ═══════════════════════════════════════════════════════════
+// CACHE-FIRST SOUND MATCHING
+// ═══════════════════════════════════════════════════════════
+const _STOP = new Set(['the','and','with','from','into','onto','over','under','near',
+  'then','than','that','this','for','its','are','was','has','not','but','can','all',
+  'any','some','across','through','between','against','around','sound','noise','out',
+  'its','after','before','their','long','deep','slow','sudden','single','first']);
+
+function _tokens(str) {
+  return str.toLowerCase()
+    .replace(/[_\-]/g, ' ').replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/).filter(w => w.length > 2 && !_STOP.has(w));
+}
+
+function _scoreFile(promptToks, filename) {
+  // strip world prefix and timestamp suffix to get the descriptive slug
+  const slug = filename.replace(/^[^-]+-/, '').replace(/-\d{10,}\.mp3$/, '');
+  const fileToks = _tokens(slug);
+  let score = 0;
+  promptToks.forEach(pt => {
+    if (fileToks.includes(pt))                                          score += 1.0; // exact
+    else if (fileToks.some(ft => ft.startsWith(pt) || pt.startsWith(ft))) score += 0.5; // prefix
+  });
+  return score;
+}
+
+function findCachedMatch(prompt) {
+  // World-specific files only
+  const files = GHOST.files.filter(f => f.startsWith(S.world + '-'));
+  if (!files.length) return null;
+  const toks = _tokens(prompt);
+  if (!toks.length) return null;
+  let best = null, bestScore = 0;
+  files.forEach(f => {
+    const s = _scoreFile(toks, f);
+    if (s > bestScore) { bestScore = s; best = f; }
+  });
+  // Threshold: 1.5 = roughly 2 matching concepts (biased toward reuse)
+  return bestScore >= 1.5 ? best : null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SFX EFFECTS
+// ═══════════════════════════════════════════════════════════
+const SFX_FX = { reverb: false, vocoder: false, granular: false, lofi: false };
+
+let _sfxConvolver = null; // shared, recreated on world switch
+
+function _getConvolver() {
+  if (_sfxConvolver) return _sfxConvolver;
+  _sfxConvolver = ctx.createConvolver();
+  // Room IR: 1.4s exponential noise decay, stereo
+  const sr = ctx.sampleRate, len = Math.floor(sr * 1.4);
+  const ir = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++)
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6)
+             * (ch === 1 ? 0.93 : 1); // slight stereo asymmetry
+  }
+  _sfxConvolver.buffer = ir;
+  return _sfxConvolver;
+}
+
+function _lofiCurve(n = 256) {
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2 / n) - 1;
+    // soft clip + slight quantisation crunch
+    c[i] = (Math.PI + 180) * x / (Math.PI + 180 * Math.abs(x));
+  }
+  return c;
+}
+
+// Build effect chain starting from srcNode, return { out, cleanup }
+// Cleanup stops any oscillators started by effects.
+function _buildFxChain(srcNode, bufDuration) {
+  let node = srcNode;
+  const toStop = [];
+
+  // ── base lowpass (tighter for lo-fi) ──────────────────────
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = SFX_FX.lofi ? 1050 : 900;
+  lp.Q.value         = SFX_FX.lofi ? 1.6  : 0.7;
+  node.connect(lp); node = lp;
+
+  // ── lo-fi: soft-clip + wow flutter ────────────────────────
+  if (SFX_FX.lofi) {
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = _lofiCurve(); shaper.oversample = '2x';
+
+    // Wow: slow LFO ±3% gain wobble
+    const wowLfo   = ctx.createOscillator();
+    wowLfo.type = 'sine';
+    wowLfo.frequency.value = 2.1 + Math.random() * 1.2;
+    const wowDepth = ctx.createGain(); wowDepth.gain.value = 0.03;
+    const wowBias  = ctx.createGain(); wowBias.gain.value  = 1.0;
+    wowLfo.connect(wowDepth); wowDepth.connect(wowBias.gain);
+    wowLfo.start(); toStop.push(wowLfo);
+
+    node.connect(shaper); shaper.connect(wowBias); node = wowBias;
+  }
+
+  // ── reverb: convolution wet/dry ───────────────────────────
+  if (SFX_FX.reverb) {
+    const conv = _getConvolver();
+    const dry  = ctx.createGain(); dry.gain.value = 0.42;
+    const wet  = ctx.createGain(); wet.gain.value = 0.68;
+    const mix  = ctx.createGain(); mix.gain.value = 1.0;
+    node.connect(dry); dry.connect(mix);
+    node.connect(conv); conv.connect(wet); wet.connect(mix);
+    node = mix;
+  }
+
+  // ── vocoder: ring modulator ────────────────────────────────
+  if (SFX_FX.vocoder) {
+    // Amplitude-modulate signal by an oscillator → sum/difference sidebands
+    const rg  = ctx.createGain(); rg.gain.value = 0;
+    const osc = ctx.createOscillator();
+    const worldFreq = { water: 174, forest: 207, city: 440 };
+    osc.frequency.value = (worldFreq[S.world] || 220) * (0.96 + Math.random() * 0.08);
+    osc.type = 'sine';
+    osc.connect(rg.gain); // oscillator modulates gain
+    node.connect(rg);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+    rg.connect(hp);
+    osc.start(); osc.stop(ctx.currentTime + (bufDuration || 4) + 0.5);
+    node = hp;
+  }
+
+  return {
+    out: node,
+    cleanup: () => toStop.forEach(n => { try { n.stop(); } catch(e){} }),
+  };
+}
+
+// Granular: scatter source buffer as ~36 short grains over ~3.5s
+function _playGranular(buf, panVal, vol, dest) {
+  if (!ctx || !buf) return;
+  const masterG = ctx.createGain(); masterG.gain.value = 0;
+  const now = ctx.currentTime;
+  masterG.gain.setTargetAtTime(vol, now, 0.14);
+  masterG.gain.setTargetAtTime(0, now + 3.8, 0.65);
+
+  let out = masterG;
+  if (SFX_FX.reverb) {
+    const conv = _getConvolver();
+    const dry = ctx.createGain(); dry.gain.value = 0.5;
+    const wet = ctx.createGain(); wet.gain.value = 0.55;
+    const mix = ctx.createGain();
+    masterG.connect(dry); dry.connect(mix);
+    masterG.connect(conv); conv.connect(wet); wet.connect(mix);
+    out = mix;
+  }
+  out.connect(dest);
+
+  const numGrains = 30 + Math.floor(Math.random() * 14);
+  const spread    = 3.4;
+  for (let i = 0; i < numGrains; i++) {
+    const offset    = Math.random() * Math.max(0.01, buf.duration - 0.1);
+    const grainDur  = 0.028 + Math.random() * 0.095; // 28–123 ms
+    const grainTime = now + (i / numGrains) * spread * (0.35 + Math.random() * 1.3);
+
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g   = ctx.createGain();         g.gain.value = 0;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-1, Math.min(1, panVal + (Math.random() * 0.55 - 0.27)));
+
+    src.connect(g); g.connect(pan); pan.connect(masterG);
+
+    // Hann-style envelope on each grain
+    g.gain.setValueAtTime(0, grainTime);
+    g.gain.linearRampToValueAtTime(0.65 + Math.random() * 0.35, grainTime + grainDur * 0.38);
+    g.gain.linearRampToValueAtTime(0, grainTime + grainDur);
+
+    src.start(grainTime, offset, grainDur);
+  }
+}
+
+// Play a cached file through the SFX audio chain (not the ghost chain)
+async function playCachedSFX(filename, direction, vol) {
+  const res = await fetch(`/sfx-cache/${encodeURIComponent(filename)}`);
+  if (!res.ok) return false;
+  const ab  = await res.arrayBuffer();
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume();
+  const buf = await ctx.decodeAudioData(ab);
+
+  const panVal = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction] ?? 0;
+  const dest   = sfxGain || masterGain || ctx.destination;
+
+  if (SFX_FX.granular) {
+    _playGranular(buf, panVal, 0.55 * vol, dest);
+  } else {
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const { out, cleanup } = _buildFxChain(src, buf.duration);
+    const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
+    const sg  = ctx.createGain();         sg.gain.value = 0;
+    out.connect(pan); pan.connect(sg); sg.connect(dest);
+    const st = ctx.currentTime;
+    sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
+    sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
+    src.start();
+    setTimeout(cleanup, (buf.duration + 1.2) * 1000);
+  }
+
+  const label = filenameToLabel(filename);
+  showSFXLabel(label, direction);
+  addSoundEntry(filename, direction, 'cache');
+  debugLine('sfx', '← ' + label.slice(0, 36));
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ELEVENLABS SFX
+// ═══════════════════════════════════════════════════════════
+async function playSFX(soundPrompt, direction, vol=1.0) {
+  debugLine('sfx', soundPrompt.slice(0,38));
+
+  // Try cache first — only generate if nothing fits
+  const match = findCachedMatch(soundPrompt);
+  if (match) {
+    try { await playCachedSFX(match, direction, vol); return; } catch(e) { /* fall through */ }
+  }
+
+  try {
+    const res = await fetch('/sfx', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text:soundPrompt, duration_seconds:4, prompt_influence:0.4, world:S.world })
+    });
+    if (!res.ok) return;
+    const ab  = await res.arrayBuffer();
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state==='suspended') ctx.resume();
+    const buf = await ctx.decodeAudioData(ab);
+    const panVal = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction] ?? 0;
+    const dest   = sfxGain || masterGain || ctx.destination;
+
+    if (SFX_FX.granular) {
+      _playGranular(buf, panVal, 0.55 * vol, dest);
+    } else {
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const { out, cleanup } = _buildFxChain(src, buf.duration);
+      const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
+      const sg  = ctx.createGain();         sg.gain.value = 0;
+      out.connect(pan); pan.connect(sg); sg.connect(dest);
+      const st = ctx.currentTime;
+      sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
+      sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
+      src.start();
+      setTimeout(cleanup, (buf.duration + 1.2) * 1000);
+    }
+
+    // Show prompt below the radio
+    showSFXLabel(soundPrompt, direction);
+    // Log to panel sounds list
+    addSoundEntry(soundPrompt, direction, 'live');
+    // Refresh ghost cache list so the new file becomes available
+    setTimeout(() => { ghostFetch().then(updateCacheCount); }, 4500);
+
+  } catch(e) { console.warn('SFX fail:',e); }
+}
+
+let _sfxLabelTimer = null;
+function showSFXLabel(prompt, direction) {
+  const wrap = document.getElementById('sfx-display');
+  const dirEl = document.getElementById('sfx-dir');
+  const textEl = document.getElementById('sfx-prompt');
+  if (!wrap || !textEl) return;
+
+  const dirSymbol = { left:'←', right:'→', ahead:'↑', behind:'↓', above:'↑', 'all around':'·' }[direction] ?? '·';
+  dirEl.textContent = dirSymbol;
+  textEl.textContent = prompt;
+
+  wrap.classList.add('visible');
+  clearTimeout(_sfxLabelTimer);
+  _sfxLabelTimer = setTimeout(() => wrap.classList.remove('visible'), 3800);
+}
+
+function playSounds(sounds, direction) {
+  if (!sounds || !sounds.length) return;
+  sounds.forEach(s => {
+    setTimeout(() => playSFX(s.prompt, direction, s.vol ?? 1.0).catch(()=>{}), s.delay ?? 0);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// GHOST LAYER — cached SFX played back muffled as texture
+// ═══════════════════════════════════════════════════════════
+let ghostMasterGain = null;
+const GHOST = { active:false, files:[], loopTimer:null, refreshTimer:null };
+
+async function ghostFetch() {
+  try {
+    const res = await fetch('/sfx-cache');
+    if (res.ok) {
+      const all = await res.json();
+      const worldFiles = all.filter(f => f.startsWith(S.world));
+      GHOST.files = worldFiles.length > 0 ? worldFiles : all;
+    }
+  } catch(e) {}
+}
+
+async function ghostPlay() {
+  if (!GHOST.active || GHOST.files.length===0 || !ctx) return;
+  const file = GHOST.files[Math.floor(Math.random()*GHOST.files.length)];
+  try {
+    const res = await fetch(`/sfx-cache/${encodeURIComponent(file)}`);
+    if (!res.ok) return;
+    const ab  = await res.arrayBuffer();
+    const buf = await ctx.decodeAudioData(ab);
+    const src = ctx.createBufferSource(); src.buffer=buf;
+    const lpf = ctx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=380+Math.random()*220; lpf.Q.value=0.4;
+    const pan = ctx.createStereoPanner(); pan.pan.value=(Math.random()-0.5)*0.6;
+    const gain = ctx.createGain(); gain.gain.value=0;
+    src.connect(lpf); lpf.connect(pan); pan.connect(gain); gain.connect(ghostMasterGain||masterGain||ctx.destination);
+    const vol = parseFloat(document.getElementById('ghost-slider').value);
+    const now = ctx.currentTime, dur = buf.duration;
+    gain.gain.setTargetAtTime(vol*0.36, now, 1.2);
+    gain.gain.setTargetAtTime(0, now+dur-1.5, 1.0);
+    src.start(); src.stop(now+dur+0.5);
+    debugLine('ghost', file);
+    // Log to panel — strip world prefix and timestamp, convert underscores to spaces
+    addSoundEntry(file, null, 'ghost');
+  } catch(e) {}
+}
+
+function scheduleGhost() {
+  if (!GHOST.active) return;
+  const delay = 18000+Math.random()*45000;
+  GHOST.loopTimer = setTimeout(async () => {
+    await ghostPlay();
+    if (Math.random()<0.3) setTimeout(ghostPlay, rnd(3000,9000));
+    scheduleGhost();
+  }, delay);
+}
+
+function startGhostLayer() {
+  if (!ctx) return;
+  GHOST.active=true;
+  ghostMasterGain = ctx.createGain();
+  ghostMasterGain.gain.value = parseFloat(document.getElementById('ghost-slider').value);
+  ghostMasterGain.connect(masterGain);
+  ghostFetch();
+  GHOST.refreshTimer = setInterval(ghostFetch, 30000);
+  GHOST.loopTimer = setTimeout(() => { ghostPlay(); scheduleGhost(); }, 12000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// DEBUG
+// ═══════════════════════════════════════════════════════════
+const DBG = { timers:{} };
+function debugLine(key, val) {
+  const el = document.getElementById('dbg-'+key); if (!el) return;
+  el.textContent = val; el.style.opacity = '1';
+  clearTimeout(DBG.timers[key]);
+  DBG.timers[key] = setTimeout(() => { el.style.opacity = '0.25'; }, 7000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// VIBE — continuous world-mood state
+// ═══════════════════════════════════════════════════════════
+const VIBE = { activity: 0.3, tension: 0.2, register: 0.5 };
+const VIBE_TYPE = {
+  moment:      { activity: 0.65, tension: 0.35 },
+  interaction: { activity: 0.88, tension: 0.70 },
+  shift:       { activity: 0.60, tension: 0.50 },
+  passing:     { activity: 0.48, tension: 0.25 },
+  distant:     { activity: 0.28, tension: 0.15 },
+  residue:     { activity: 0.18, tension: 0.10 },
+  conflict:    { activity: 0.80, tension: 0.90 },
+};
+const VIBE_TIME = {
+  'late night':0.15,'night':0.20,'early morning':0.30,'dawn':0.40,
+  'morning':0.65,'midday':0.82,'afternoon':0.70,'dusk':0.45,'evening':0.35,
+};
+const VIBE_WEATHER = {
+  'dry still':        { register: 0.70, tension: 0.12, lfoMult: 0.65 },
+  'clear':            { register: 0.72, tension: 0.10, lfoMult: 0.60 },
+  'overcast':         { register: 0.50, tension: 0.22, lfoMult: 0.90 },
+  'light rain':       { register: 0.38, tension: 0.32, lfoMult: 1.20 },
+  'heavy rain':       { register: 0.22, tension: 0.55, lfoMult: 1.60 },
+  'after rain':       { register: 0.48, tension: 0.18, lfoMult: 0.80 },
+  'frost':            { register: 0.15, tension: 0.08, lfoMult: 0.45 },
+  'wind':             { register: 0.55, tension: 0.42, lfoMult: 1.30 },
+  'fog':              { register: 0.28, tension: 0.28, lfoMult: 0.75 },
+  'solar minimum':    { register: 0.50, tension: 0.10, lfoMult: 0.60 },
+  'solar flare':      { register: 0.75, tension: 0.80, lfoMult: 2.00 },
+  'geomagnetic storm':{ register: 0.60, tension: 0.70, lfoMult: 1.80 },
+  'deep silence':     { register: 0.20, tension: 0.05, lfoMult: 0.30 },
+  'ion storm':        { register: 0.65, tension: 0.85, lfoMult: 2.20 },
+  'coronal mass ejection':{ register: 0.80, tension: 0.90, lfoMult: 2.50 },
+};
+
+function updateVibe(ev) {
+  const tgt = VIBE_TYPE[ev?.type] || { activity:0.4, tension:0.3 };
+  VIBE.activity += (tgt.activity - VIBE.activity) * 0.35;
+  VIBE.tension  += (tgt.tension  - VIBE.tension)  * 0.30;
+  const tod = (S.timeOfDay||'').toLowerCase();
+  for (const [k,v] of Object.entries(VIBE_TIME)) {
+    if (tod.includes(k)) { VIBE.register += (v - VIBE.register) * 0.15; break; }
+  }
+  // Mood layer drifts slowly toward VIBE — large time constant
+  updateMoodVibe();
+}
+
+function applyWeatherToVibe() {
+  const wv = VIBE_WEATHER[S.weather];
+  if (!wv) return;
+  VIBE.register += (wv.register - VIBE.register) * 0.4;
+  VIBE.tension  += (wv.tension  - VIBE.tension)  * 0.3;
+  updateMoodVibe();
+  if (lfoGain && ctx) {
+    const base = WORLDS[S.world].ambient.lfo.depth;
+    lfoGain.gain.setTargetAtTime(base * wv.lfoMult, ctx.currentTime, 10);
+  }
+}
+
+function driftWeather() {
+  if (!S.running) return;
+  const world = WORLDS[S.world];
+  const options = world.weathers.filter(w => w !== S.weather);
+  S.weather = options[Math.floor(Math.random() * options.length)];
+  const el = document.getElementById('tr-weather');
+  el.textContent = `${S.weather} · ${S.timeOfDay}`;
+  el.style.transition = 'none'; el.style.color = 'var(--accent)';
+  setTimeout(() => { el.style.transition = 'color 3s'; el.style.color = ''; }, 80);
+  setTimeout(() => { el.style.transition = ''; }, 3200);
+  applyWeatherToVibe();
+  scheduleWeatherDrift();
+}
+
+function scheduleWeatherDrift() {
+  clearTimeout(S.weatherTimeout);
+  if (!S.running) return;
+  const delay = (5 + Math.random() * 10) * 60 * 1000;
+  S.weatherTimeout = setTimeout(driftWeather, delay);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SHADOW LAYER — emotional resonance of events
+// Per-event synthesis: each event type leaves a different
+// acoustic/tonal trace, as if the world itself resonates.
+// ═══════════════════════════════════════════════════════════
+
+// World fundamentals and inharmonic series (slightly detuned partials = organic)
+const WORLD_RESONANCE = {
+  water:  { f0: 63,  series: [1, 2.02, 2.97, 4.03, 5.01, 6.05] },
+  forest: { f0: 55,  series: [1, 1.98, 3.01, 3.99, 5.03, 6.02] },
+  city:   { f0: 60,  series: [1, 2.00, 3.00, 4.00, 5.00, 6.00] }, // city = regular hard surfaces
+};
+
+function _worldFreqs() {
+  const r = WORLD_RESONANCE[S.world] || WORLD_RESONANCE.water;
+  return r.series.map(p => r.f0 * p);
+}
+
+function _panVal(direction) {
+  return ({left:-0.55, right:0.55, ahead:0, behind:0, above:0, 'all around':0})[direction] ?? 0;
+}
+
+// Spawn a single tone through shadowGain, auto-releases
+function _shadowTone(freq, vol, atkSec, decaySec, panVal, wave='sine') {
+  if (!ctx || !shadowGain) return;
+  const osc = ctx.createOscillator();
+  osc.type = wave;
+  osc.frequency.value = freq * (1 + (Math.random() * 0.006 - 0.003)); // micro-detune
+  const env = ctx.createGain(); env.gain.value = 0;
+  const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
+  osc.connect(env); env.connect(pan); pan.connect(shadowGain);
+  const now = ctx.currentTime;
+  env.gain.setTargetAtTime(vol, now, atkSec / 3);
+  env.gain.setTargetAtTime(0.0001, now + atkSec + decaySec * 0.1, decaySec / 3);
+  osc.start(now);
+  osc.stop(now + atkSec + decaySec + 1.0);
+}
+
+// BLOOM — resonant chord of world partials, like a brief singing bowl
+function _shadowBloom(dir, vol, register) {
+  const freqs = _worldFreqs();
+  const panVal = _panVal(dir);
+  const offset = Math.round(register * (freqs.length - 3));
+  const n = 2 + (Math.random() < 0.4 ? 1 : 0);
+  for (let i = 0; i < n; i++) {
+    const f = freqs[Math.min(freqs.length - 1, offset + i)];
+    _shadowTone(f, vol * (1 - i * 0.28), 0.08 + i * 0.04, 1.6 + Math.random() * 1.4,
+                Math.max(-1, Math.min(1, panVal + i * 0.1 - 0.1)));
+  }
+}
+
+// CONVERGE — two tones that slowly move toward unison (interaction)
+function _shadowConverge(dir, vol, tension) {
+  if (!ctx || !shadowGain) return;
+  const freqs = _worldFreqs();
+  const panVal = _panVal(dir);
+  const f1 = freqs[1 + Math.floor(Math.random() * 3)];
+  const detuneHz = 2.5 + tension * 4.5;
+  const f2 = f1 + detuneHz;
+  const dur = 2.8 + Math.random() * 1.8;
+  [[f1, panVal - 0.14], [f2, panVal + 0.14]].forEach(([startF, pan], idx) => {
+    const osc = ctx.createOscillator(); osc.type = 'sine';
+    osc.frequency.setValueAtTime(startF, ctx.currentTime);
+    if (idx === 1) osc.frequency.setTargetAtTime(f1, ctx.currentTime + dur * 0.25, dur * 0.28);
+    const env = ctx.createGain(); env.gain.value = 0;
+    const pn  = ctx.createStereoPanner(); pn.pan.value = pan;
+    osc.connect(env); env.connect(pn); pn.connect(shadowGain);
+    const now = ctx.currentTime;
+    env.gain.setTargetAtTime(vol * (idx===0?1:0.82), now, 0.15);
+    env.gain.setTargetAtTime(0.0001, now + dur * 0.65, 0.55);
+    osc.start(now); osc.stop(now + dur + 0.8);
+  });
+}
+
+// CLUSTER — tight dissonant chord (conflict)
+function _shadowCluster(dir, vol, tension) {
+  const freqs = _worldFreqs();
+  const panVal = _panVal(dir);
+  const f = freqs[Math.min(2, Math.floor(1 + tension * 2))];
+  _shadowTone(f,                       vol,       0.025, 0.55, panVal - 0.2, 'sawtooth');
+  _shadowTone(f * Math.pow(2, 1/12),   vol * 0.72, 0.030, 0.48, panVal,       'sawtooth');
+  _shadowTone(f * Math.pow(2, 6/12),   vol * 0.52, 0.035, 0.70, panVal + 0.2, 'sawtooth');
+}
+
+// SWEEP — noise through a bandpass that moves across frequency space (shift)
+function _shadowSweep(dir, vol, tension) {
+  if (!ctx || !shadowGain) return;
+  const freqs = _worldFreqs();
+  const panVal = _panVal(dir);
+  const bufLen = ctx.sampleRate * 4;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const d = buf.getChannelData(0); for (let i=0;i<bufLen;i++) d[i]=Math.random()*2-1;
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const bp  = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 7;
+  const env = ctx.createGain(); env.gain.value = 0;
+  const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
+  src.connect(bp); bp.connect(env); env.connect(pan); pan.connect(shadowGain);
+  const now = ctx.currentTime, dur = 3.2 + Math.random() * 1.8;
+  bp.frequency.setValueAtTime(freqs[1], now);
+  bp.frequency.exponentialRampToValueAtTime(freqs[3 + Math.floor(tension * 2)], now + dur * 0.75);
+  env.gain.setTargetAtTime(vol * 0.38, now, 0.3);
+  env.gain.setTargetAtTime(0.0001, now + dur * 0.65, 0.5);
+  src.start(now); src.stop(now + dur + 0.5);
+}
+
+// RESIDUE — single long barely-audible decay (residue)
+function _shadowResidue(dir, vol, register) {
+  const freqs = _worldFreqs();
+  const f = freqs[1 + Math.floor(register * 2)];
+  _shadowTone(f, vol * 0.55, 0.55, 5.5 + Math.random() * 3, _panVal(dir));
+}
+
+// SHIMMER — high partials only, very quiet (distant)
+function _shadowShimmer(dir, vol, register) {
+  const freqs = _worldFreqs();
+  const panVal = _panVal(dir);
+  const high = freqs.slice(3);
+  high.forEach((f, i) => {
+    _shadowTone(f, vol * (0.4 - i * 0.08), 0.2, 2.5 + Math.random(), panVal + (i-1)*0.12);
+  });
+}
+
+// DRIFT — Doppler-like pitch slide (passing)
+function _shadowDrift(dir, vol, activity) {
+  if (!ctx || !shadowGain) return;
+  const freqs = _worldFreqs();
+  const panVal = _panVal(dir);
+  const baseF = freqs[2 + Math.floor(activity * 2)];
+  const osc = ctx.createOscillator(); osc.type = 'sine';
+  osc.frequency.setValueAtTime(baseF * 1.04, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(baseF * 0.96, ctx.currentTime + 2.8);
+  const env = ctx.createGain(); env.gain.value = 0;
+  const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
+  osc.connect(env); env.connect(pan); pan.connect(shadowGain);
+  const now = ctx.currentTime, dur = 2.2 + Math.random() * 1.2;
+  env.gain.setTargetAtTime(vol, now, 0.2);
+  env.gain.setTargetAtTime(0.0001, now + dur * 0.55, 0.5);
+  osc.start(now); osc.stop(now + dur + 0.5);
+}
+
+// Master shadow dispatcher — called from fireEvent after each world event
+function playShadow(ev) {
+  if (!ctx || !shadowGain || !S.running) return;
+  const { activity, tension, register } = VIBE;
+  const dir = ev.direction || 'all around';
+  const baseVol = 0.08 + register * 0.04; // always quiet — shadow, not signal
+  if (Math.random() < 0.12) return; // occasional silence — shadow has gaps too
+  const delay = ev.type==='conflict'    ?  180+Math.random()*200 :
+                ev.type==='interaction' ?  350+Math.random()*400 :
+                ev.type==='shift'       ?  800+Math.random()*800 :
+                ev.type==='residue'     ? 1500+Math.random()*1000 :
+                ev.type==='moment'      ?  400+Math.random()*500 :
+                                           500+Math.random()*600;
+  setTimeout(() => {
+    if (!S.running || !ctx || !shadowGain) return;
+    switch(ev.type) {
+      case 'moment':      _shadowBloom(dir, baseVol, register); break;
+      case 'interaction': Math.random()<0.6
+                            ? _shadowConverge(dir, baseVol*1.1, tension)
+                            : _shadowBloom(dir, baseVol*0.85, register);
+                          break;
+      case 'conflict':    _shadowCluster(dir, baseVol*1.25, tension); break;
+      case 'shift':       _shadowSweep(dir, baseVol, tension); break;
+      case 'residue':     _shadowResidue(dir, baseVol*0.7, register); break;
+      case 'distant':     _shadowShimmer(dir, baseVol*0.45, register); break;
+      case 'passing':     _shadowDrift(dir, baseVol*0.8, activity); break;
+      default:            _shadowBloom(dir, baseVol, register);
+    }
+    debugLine('shadow', ev.type + ' · ' + dir);
+  }, delay);
+}
+
+function startShadowBus() {
+  if (!ctx) return;
+  shadowGain = ctx.createGain();
+  shadowGain.gain.value = 0;
+  shadowGain.connect(masterGain);
+  shadowGain.gain.setTargetAtTime(
+    parseFloat(document.getElementById('mix-shadow')?.value ?? 0.72), ctx.currentTime, 2.5
+  );
+}
+
+function stopShadowBus() {
+  if (shadowGain) { shadowGain.disconnect(); shadowGain = null; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// MOOD LAYER — slow harmonic field, ecosystem emotional state
+// Always running. Evolves over minutes, not seconds.
+// Built from world-specific inharmonic partials + long reverb.
+// ═══════════════════════════════════════════════════════════
+
+const WORLD_MOOD = {
+  water:  { f0: 63, partials:[1,2.02,2.97,4.03,5.01],
+            vols:[0.90,0.58,0.30,0.16,0.09],
+            lfoRates:[0.026,0.019,0.015,0.011,0.008] },
+  forest: { f0: 55, partials:[1,1.98,3.01,3.99,5.03],
+            vols:[0.88,0.54,0.26,0.14,0.08],
+            lfoRates:[0.020,0.016,0.012,0.009,0.007] },
+  city:   { f0: 60, partials:[1,2.00,3.00,4.00,5.00],
+            vols:[0.85,0.60,0.38,0.20,0.11],
+            lfoRates:[0.032,0.025,0.018,0.014,0.011] },
+};
+
+let moodOscs   = [];  // { osc, envGain, lfo, baseVol }
+let moodPreMix = null;
+let _moodRevNode = null;
+
+function _buildMoodIR() {
+  // Long diffuse reverb — 3.8s, stereo
+  const sr = ctx.sampleRate, len = Math.floor(sr * 3.8);
+  const ir = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++)
+      d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 1.7) * (ch===1?0.91:1);
+  }
+  const conv = ctx.createConvolver(); conv.buffer = ir; return conv;
+}
+
+function startMood(world) {
+  stopMood();
+  const cfg = WORLD_MOOD[world]; if (!cfg || !ctx) return;
+
+  moodGain = ctx.createGain();
+  moodGain.gain.value = 0;
+  moodGain.connect(masterGain);
+
+  _moodRevNode = _buildMoodIR();
+  moodPreMix = ctx.createGain(); moodPreMix.gain.value = 1;
+
+  const dryG = ctx.createGain(); dryG.gain.value = 0.22;
+  const wetG  = ctx.createGain(); wetG.gain.value  = 0.90; // heard mostly as reverb tail
+  moodPreMix.connect(dryG); dryG.connect(moodGain);
+  moodPreMix.connect(_moodRevNode); _moodRevNode.connect(wetG); wetG.connect(moodGain);
+
+  cfg.partials.forEach((p, i) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = cfg.f0 * p;
+    osc.detune.value = (Math.random()-0.5) * 5; // ±2.5 cents drift
+    const envGain = ctx.createGain(); envGain.gain.value = 0;
+    // Slow breathing LFO per partial
+    const lfo = ctx.createOscillator(); lfo.type = 'sine';
+    lfo.frequency.value = cfg.lfoRates[i];
+    const lfoD = ctx.createGain(); lfoD.gain.value = cfg.vols[i] * 0.010;
+    lfo.connect(lfoD); lfoD.connect(envGain.gain);
+    osc.connect(envGain); envGain.connect(moodPreMix);
+    osc.start(); lfo.start();
+    moodOscs.push({ osc, envGain, lfo, baseVol: cfg.vols[i] });
+  });
+
+  // Fade in mood very slowly
+  moodGain.gain.setTargetAtTime(
+    parseFloat(document.getElementById('mix-mood')?.value ?? 0.58), ctx.currentTime, 12.0
+  );
+  updateMoodVibe();
+}
+
+function stopMood() {
+  moodOscs.forEach(({ osc, lfo }) => {
+    try { osc.stop(); } catch(e){}
+    try { lfo.stop(); } catch(e){}
+  });
+  moodOscs = [];
+  if (moodGain)    { moodGain.disconnect();    moodGain=null; }
+  if (_moodRevNode){ _moodRevNode.disconnect(); _moodRevNode=null; }
+  moodPreMix = null;
+}
+
+// Called from updateVibe — mood drifts very slowly toward current VIBE
+function updateMoodVibe() {
+  if (!moodGain || !ctx || !moodOscs.length) return;
+  const now = ctx.currentTime;
+  const TC = 25; // 25-second time constant — mood moves glacially
+  moodOscs.forEach(({ envGain, baseVol }, i) => {
+    // Activity gates which partials are heard
+    const actGate = i===0 ? 1.0
+                  : i===1 ? Math.pow(VIBE.activity, 0.45)
+                  : i===2 ? Math.pow(VIBE.activity, 0.85)
+                  : i===3 ? Math.pow(VIBE.activity, 1.3)
+                  :         Math.pow(VIBE.activity, 1.9);
+    // Tension subtly brightens upper partials
+    const tensionBoost = i >= 3 ? 1 + VIBE.tension * 0.35 : 1.0;
+    const target = baseVol * actGate * tensionBoost * 0.028; // very quiet
+    envGain.gain.setTargetAtTime(target, now, TC);
+  });
+  debugLine('mood', `act=${VIBE.activity.toFixed(2)} ten=${VIBE.tension.toFixed(2)}`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PLACEHOLDER — kept so references from old code don't break
+// ═══════════════════════════════════════════════════════════
+const beatMs = () => 2000; // unused but nextDelay references it
+let melodyGain = null; // stub — not used but some path may check it
+
+// ═══════════════════════════════════════════════════════════
+
+function stopGhostLayer() {
+  GHOST.active=false;
+  clearTimeout(GHOST.loopTimer); clearInterval(GHOST.refreshTimer);
+  if (ghostMasterGain) { ghostMasterGain.disconnect(); ghostMasterGain=null; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RHYTHM
+// ═══════════════════════════════════════════════════════════
+const PHASES = [
+  { minW:10, maxW:28, clusterP:0.06, clusterN:1 },
+  { minW: 6, maxW:15, clusterP:0.14, clusterN:1 },
+  { minW: 3, maxW: 9, clusterP:0.30, clusterN:2 },
+  { minW: 2, maxW: 5, clusterP:0.58, clusterN:3 },
+  { minW: 5, maxW:14, clusterP:0.16, clusterN:1 },
+  { minW: 8, maxW:22, clusterP:0.08, clusterN:1 },
+];
+const PHASE_LEN = [4,3,4,5,3,4];
+let phaseIdx=0, phaseEvts=0;
+function phase(){ return PHASES[phaseIdx%PHASES.length]; }
+function tickPhase(){ if(++phaseEvts>=PHASE_LEN[phaseIdx%PHASE_LEN.length]){phaseEvts=0;phaseIdx++;} }
+function nextDelay(){ const p=phase(); return rnd(p.minW,p.maxW)*(Math.random()<0.07?rnd(1.5,2.8):1)*1000/S.density; }
+function rnd(a,b){ return a+Math.random()*(b-a); }
+
+// ═══════════════════════════════════════════════════════════
+// CLAUDE
+// ═══════════════════════════════════════════════════════════
+function buildProximityNote() {
+  const agents = WORLDS[S.world].agents;
+  const pairs  = [];
+  for (let i = 0; i < agents.length; i++) {
+    for (let j = i+1; j < agents.length; j++) {
+      const pi = VIEW.pos[agents[i].id] || AGENT_POS[S.world][agents[i].id];
+      const pj = VIEW.pos[agents[j].id] || AGENT_POS[S.world][agents[j].id];
+      if (!pi||!pj) continue;
+      const dx=pi.gx-pj.gx, dz=pi.gz-pj.gz;
+      if (Math.sqrt(dx*dx+dz*dz)<1.4) pairs.push(`${agents[i].label} & ${agents[j].label}`);
+    }
+  }
+  return pairs.length ? pairs.join(', ') : 'none';
+}
+
+async function callClaude() {
+  const world = WORLDS[S.world];
+  const agentBlock = world.agents.map(a =>
+    `- ${a.label} [${a.id}]: ${a.desc}\n  state: ${S.agentStates[a.id]||a.state}`
+  ).join('\n');
+  const recentBlock = S.recentEvents.slice(-5).map(e=>`[${e.agent}] ${e.description}`).join('\n')||'none yet';
+
+  const prompt =
+`ENVIRONMENT: ${world.label}
+WEATHER / CONDITIONS: ${S.weather}
+TIME / PHASE: ${S.timeOfDay}
+EVENTS SO FAR: ${S.eventCount}
+
+AGENTS:
+${agentBlock}
+
+RECENT (evolve from, don't repeat):
+${recentBlock}
+
+CLOSE PAIRS right now (consider interaction or conflict):
+${buildProximityNote()}
+${S.arc.ready ? `
+STORY ARC: "${S.arc.title}"
+"${S.arc.logline}"
+BEAT ${S.arc.beatIdx + 1} of ${S.arc.beats.length}: ${S.arc.beats[S.arc.beatIdx] || ''}
+Events on this beat: ${S.arc.beatEvents} — set advance_beat true when this beat feels complete (min 2 events).` : ''}
+
+Respond ONLY with valid JSON, no markdown:
+{
+  "description": "one sentence — only what is heard / sensed",
+  "agent": "agent label",
+  "type": "distant|passing|moment|shift|interaction|residue|conflict",
+  "direction": "ahead|behind|left|right|above|all around",
+  "sounds": [
+    { "prompt": "first sound, max 10 words", "delay": 0,    "vol": 0.70 },
+    { "prompt": "second sound, max 10 words", "delay": 1200, "vol": 0.42 },
+    { "prompt": "third sound, max 10 words",  "delay": 2800, "vol": 0.28 }
+  ],
+  "agent_updates": { "agent_id": "new state" },
+  "advance_beat": false
+}
+
+sounds: 1 required, 2 and 3 optional. Spread sounds across 0–4 seconds. No sound should be loud or sharp — think layers heard through space. First is the main event (vol ~0.70), second arrives later as context or echo (vol ~0.40), third is a distant residue or environmental bleed (vol ~0.25). Together they fill the gap between events.
+advance_beat: set true only when the current arc beat has resolved and the story is ready to move to the next beat.`;
+
+  const res = await fetch('/claude', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:500, system:world.systemPrompt, messages:[{role:'user',content:prompt}] })
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = await res.json();
+  const rawText = data.content[0].text.trim().replace(/```json|```/g,'').trim();
+  const ev = JSON.parse(rawText);
+  return { ev, rawPrompt: prompt, rawResponse: rawText };
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENGINE
+// ═══════════════════════════════════════════════════════════
+function scheduleNext(){
+  if(!S.running) return;
+  const delay=nextDelay(); S.nextAt=Date.now()+delay;
+  if(delay>14000) setTimeout(()=>{ if(S.running) addSilence(); },1800);
+  S.nextTimeout=setTimeout(async()=>{
+    if(!S.running) return;
+    const p=phase(); const n=Math.random()<p.clusterP?p.clusterN:1;
+    for(let i=0;i<n;i++){
+      if(!S.running) break;
+      if(i>0) await sleep(rnd(1200,3500));
+      await fireEvent();
+    }
+    scheduleNext();
+  },delay);
+}
+
+async function fireEvent(){
+  ripple(); setStatus('—');
+  try {
+    const { ev, rawPrompt, rawResponse } = await callClaude();
+    if(ev.agent_updates){ for(const [id,st] of Object.entries(ev.agent_updates)) S.agentStates[id]=st; }
+    addEventRow(ev);
+    S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
+    S.eventCount++; tickPhase();
+    // Arc beat tracking
+    if (S.arc.ready) {
+      S.arc.beatEvents++;
+      if (ev.advance_beat && S.arc.beatEvents >= 2) advanceBeat();
+      else if (S.arc.beatEvents >= 6) advanceBeat(); // safety auto-advance
+    }
+    updateVibe(ev);
+    // Shadow: the emotional resonance of this event
+    playShadow(ev);
+    flashAgent(ev.agent, ev.agent_updates);
+    updateClock();
+    addPanelEntry(rawPrompt, rawResponse, ev);
+    updatePanelAgents();
+    updatePanelState();
+    updatePanelArc();
+    if(ev.sounds) playSounds(ev.sounds, ev.direction);
+    else if(ev.sound_prompt) playSFX(ev.sound_prompt, ev.direction).catch(()=>{});
+  } catch(e){ console.warn('event failed:',e); setStatus('retry…'); }
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ═══════════════════════════════════════════════════════════
+// DOM
+// ═══════════════════════════════════════════════════════════
+function addEventRow(ev){
+  // Update ticker
+  const tEl = document.getElementById('ticker-text');
+  if (tEl) {
+    const label = (ev.agent || '').toLowerCase();
+    const desc  = ev.description || '';
+    const full  = label ? `${label} — ${desc}` : desc;
+    tEl.classList.remove('running');
+    void tEl.offsetWidth; // force reflow to restart animation
+    tEl.textContent = full;
+    const maskW = tEl.parentElement?.offsetWidth || 200;
+    const textW = tEl.scrollWidth;
+    if (textW > maskW) {
+      const shift = `-${((textW - maskW + 20) / textW * 100).toFixed(1)}%`;
+      const dur   = (textW / 40).toFixed(1) + 's';
+      tEl.style.setProperty('--ticker-shift', shift);
+      tEl.style.setProperty('--ticker-dur', dur);
+      tEl.classList.add('running');
+    }
+  }
+  const log=document.getElementById('event-log');
+  const time=new Date().toTimeString().slice(0,5);
+  const tag=(ev.agent||'').slice(0,5).toLowerCase();
+  const el=document.createElement('div');
+  el.className=`ev ${ev.type||'moment'}`;
+  el.innerHTML=`<span class="ev-time">${time}</span><span class="ev-agent">${tag}</span><span class="ev-desc">${ev.description}</span><span class="ev-type">${ev.type||''}</span>`;
+  log.appendChild(el); pruneLog(log);
+}
+
+function addSilence(){
+  const log=document.getElementById('event-log');
+  const el=document.createElement('div'); el.className='ev';
+  el.innerHTML=`<div class="ev-silence">· · ·</div>`;
+  log.appendChild(el); pruneLog(log);
+}
+
+function pruneLog(log){
+  const evs=log.querySelectorAll('.ev');
+  if(evs.length>9){ evs[0].classList.add('gone'); setTimeout(()=>evs[0].remove(),4500); }
+}
+
+function ripple(){
+  const p=document.getElementById('pulse');
+  p.classList.remove('pop'); void p.offsetWidth; p.classList.add('pop');
+}
+
+function setStatus(msg){ document.getElementById('api-stat').textContent=msg; }
+
+function updateClock(){
+  const el=Math.floor((Date.now()-S.startTime)/1000);
+  const m=String(Math.floor(el/60)).padStart(2,'0');
+  const s=String(el%60).padStart(2,'0');
+  document.getElementById('tr-clock').textContent=`${m}:${s} · ${S.eventCount} events`;
+}
+
+function flashAgent(label, agentUpdates){
+  const primary=WORLDS[S.world].agents.find(a=>a.label===label);
+  if (primary) VIEW.pulses[primary.id]=Date.now();
+  if (agentUpdates){
+    for (const id of Object.keys(agentUpdates)){
+      if (!VIEW.pulses[id]||Date.now()-VIEW.pulses[id]>300) VIEW.secondary[id]=Date.now();
+    }
+  }
+  document.querySelectorAll('.agent-pill').forEach(pill=>{
+    const isThis=pill.dataset.label===label;
+    pill.classList.toggle('lit',isThis);
+    if(isThis){ setTimeout(()=>{ pill.classList.remove('lit'); pill.classList.add('warm'); setTimeout(()=>pill.classList.remove('warm'),6000); },2500); }
+  });
+}
+
+function buildAgentStrip(){
+  const strip=document.getElementById('agents-strip'); strip.innerHTML='';
+  WORLDS[S.world].agents.forEach(a=>{
+    const pill=document.createElement('span');
+    pill.className='agent-pill'; pill.dataset.label=a.label;
+    pill.textContent=a.label; pill.title=S.agentStates[a.id]||a.state;
+    strip.appendChild(pill);
+  });
+}
+
+// Map the current hour to the closest entry in a world's times array
+function realTimeIdx(times) {
+  const h = new Date().getHours(); // 0-23
+  // Score each label by how well it matches the current hour
+  const SCORES = {
+    'pre-dawn':     [3,4,5],
+    'dawn':         [5,6,7],
+    'dawn chorus':  [5,6,7],
+    'early morning':[6,7,8],
+    'morning':      [8,9,10,11],
+    'morning rush': [7,8,9],
+    'rush hour':    [7,8,9],
+    'midday':       [11,12,13],
+    'afternoon':    [13,14,15,16],
+    'late afternoon':[15,16,17],
+    'dusk':         [17,18,19],
+    'evening rush': [17,18,19],
+    'evening':      [19,20,21],
+    'night':        [22,23,0,1,2,3],
+  };
+  let best = 0, bestDist = Infinity;
+  times.forEach((label, i) => {
+    const hours = SCORES[label.toLowerCase()] || [];
+    const dist = hours.length
+      ? Math.min(...hours.map(hh => Math.min(Math.abs(h-hh), 24-Math.abs(h-hh))))
+      : 12; // unknown label — deprioritise
+    if (dist < bestDist) { bestDist = dist; best = i; }
+  });
+  return best;
+}
+
+function initWorld(w){
+  S.world=w; S.recentEvents=[]; S.eventCount=0; phaseIdx=0; phaseEvts=0;
+  clearTimeout(S.weatherTimeout);
+  clearTimeout(S.arc.epochTimer); clearInterval(_epochBarInterval);
+  // Reset arc state
+  S.arc.title=''; S.arc.logline=''; S.arc.beats=[];
+  S.arc.beatIdx=0; S.arc.beatEvents=0;
+  S.arc.generating=false; S.arc.ready=false;
+  S.arc.prevTitle=''; S.arc.prevLogline='';
+  const world=WORLDS[w];
+  S.weather  =world.weathers[Math.floor(Math.random()*world.weathers.length)];
+  // Start at the time of day that matches the current real-world clock
+  S.arc.epochIdx = realTimeIdx(world.times);
+  S.timeOfDay=world.times[S.arc.epochIdx];
+  S.agentStates={};
+  world.agents.forEach(a=>{ S.agentStates[a.id]=a.state; });
+  document.getElementById('tr-world').textContent=w;
+  document.getElementById('tr-weather').textContent=`${S.weather} · ${S.timeOfDay}`;
+  document.getElementById('tr-clock').textContent='—';
+  document.querySelectorAll('.world-btn').forEach(b=>b.classList.toggle('active',b.dataset.world===w));
+  document.getElementById('event-log').innerHTML='';
+  buildAgentStrip();
+  VIEW.pulses={}; VIEW.secondary={}; VIEW.pos={}; VIEW.tgt={};
+  VIEW.creatureProf={}; VIEW.creatureAngle={}; VIEW.wobble={}; VIEW.age={}; VIEW.tailHist={};
+  WORLDS[w].agents.forEach(a => {
+    VIEW.creatureProf[a.id] = makeCreatureProfile(a.id, w);
+    VIEW.creatureAngle[a.id] = Math.random() * Math.PI * 2;
+    VIEW.wobble[a.id] = 0; VIEW.age[a.id] = 0; VIEW.tailHist[a.id] = [];
+  });
+  if(S.running){ startAmbient(w); startShadowBus(); startMood(w); }
+  document.getElementById('pl-list').innerHTML = '';
+  const psl = document.getElementById('ps-list'); if (psl) psl.innerHTML = '';
+  if (typeof updatePanelState   === 'function') updatePanelState();
+  if (typeof updatePanelAgents  === 'function') updatePanelAgents();
+  if (typeof updateCacheCount   === 'function') updateCacheCount();
+  if (typeof updatePanelArc     === 'function') updatePanelArc();
+}
+
+// ═══════════════════════════════════════════════════════════
+// STORY ARC — epoch-based narrative with beat tracking
+// ═══════════════════════════════════════════════════════════
+
+const ARC_SYSTEM = `You generate story arcs for living ambient sound worlds.
+An arc is a short grounded narrative that plays out through a sequence of sound events.
+Keep it earthy and specific — things that could actually be heard.
+No metaphors, no drama for drama's sake. Just what unfolds.`;
+
+async function generateArc() {
+  if (!S.running) return;
+  S.arc.generating = true; S.arc.ready = false;
+  updatePanelArc();
+  const world = WORLDS[S.world];
+  const agentNames = world.agents.map(a => a.label).join(', ');
+  const memory = S.arc.prevTitle
+    ? `PREVIOUS ARC: "${S.arc.prevTitle}" — "${S.arc.prevLogline}" (let this linger loosely)`
+    : `PREVIOUS ARC: none`;
+
+  const prompt =
+`WORLD: ${world.label}
+TIME: ${S.timeOfDay}
+WEATHER: ${S.weather}
+AGENTS: ${agentNames}
+
+${memory}
+
+Generate a story arc for this epoch. It should involve 2–3 agents and feel grounded in what you'd actually hear in this environment. Something small, specific, and consequential.
+
+Respond ONLY with valid JSON:
+{
+  "title": "short evocative title, 3–5 words",
+  "logline": "one sentence — what happens across this arc",
+  "beats": [
+    "setup: ...",
+    "development: ...",
+    "peak: ...",
+    "resolution: ...",
+    "residue: ..."
+  ]
+}`;
+
+  try {
+    const res = await fetch('/claude', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:400,
+        system: ARC_SYSTEM, messages:[{role:'user',content:prompt}] })
+    });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const parsed = JSON.parse(data.content[0].text.trim().replace(/```json|```/g,'').trim());
+    S.arc.title    = parsed.title    || S.timeOfDay;
+    S.arc.logline  = parsed.logline  || '';
+    S.arc.beats    = Array.isArray(parsed.beats) ? parsed.beats : ['unfolds'];
+    S.arc.beatIdx  = 0;
+    S.arc.beatEvents = 0;
+  } catch(e) {
+    console.warn('arc generation failed:', e);
+    S.arc.title   = S.timeOfDay;
+    S.arc.logline = '';
+    S.arc.beats   = ['setup', 'development', 'peak', 'resolution', 'residue'];
+    S.arc.beatIdx = 0; S.arc.beatEvents = 0;
+  }
+  S.arc.generating = false; S.arc.ready = true;
+  applyArcBeatMood(); // prime VIBE for beat 0 (setup)
+  updatePanelArc();
+}
+
+// Arc beat moods: indexed 0-4 (setup → development → peak → resolution → residue)
+// Values are VIBE targets pushed toward when a beat advances
+const ARC_BEAT_MOODS = [
+  { activity:0.18, tension:0.12, register:0.35 }, // 0 setup    — still, anticipatory
+  { activity:0.42, tension:0.38, register:0.55 }, // 1 development — building
+  { activity:0.78, tension:0.72, register:0.80 }, // 2 peak      — intense, bright
+  { activity:0.38, tension:0.22, register:0.48 }, // 3 resolution — settling
+  { activity:0.12, tension:0.07, register:0.28 }, // 4 residue   — quiet, dark
+];
+
+function applyArcBeatMood() {
+  if (!S.arc.ready) return;
+  const beats = S.arc.beats.length || 5;
+  // normalize beatIdx to 0-4 range regardless of how many beats exist
+  const moodIdx = Math.min(4, Math.round(S.arc.beatIdx / Math.max(beats - 1, 1) * 4));
+  const mood = ARC_BEAT_MOODS[moodIdx];
+  if (!mood) return;
+  // Push VIBE partway toward the arc mood — don't override event-driven state entirely
+  const blend = 0.35;
+  VIBE.activity = VIBE.activity + (mood.activity - VIBE.activity) * blend;
+  VIBE.tension  = VIBE.tension  + (mood.tension  - VIBE.tension)  * blend;
+  VIBE.register = VIBE.register + (mood.register - VIBE.register) * blend;
+  // Mood layer will drift toward new VIBE state via updateMoodVibe
+  updateMoodVibe();
+  debugLine('arc', `beat ${S.arc.beatIdx} → mood ${moodIdx} (t=${mood.tension.toFixed(2)})`);
+}
+
+function advanceBeat() {
+  if (!S.arc.ready || S.arc.beatEvents < 2) return;
+  if (S.arc.beatIdx < S.arc.beats.length - 1) {
+    S.arc.beatIdx++;
+    S.arc.beatEvents = 0;
+    applyArcBeatMood();
+    updatePanelArc();
+  }
+}
+
+let _epochStart = 0;
+let _epochDuration = 0;
+let _epochBarInterval = null;
+
+function scheduleEpoch() {
+  clearTimeout(S.arc.epochTimer);
+  clearInterval(_epochBarInterval);
+  if (!S.running) return;
+  _epochDuration = (1 + Math.random() * 2) * 60 * 1000; // 1–3 min
+  _epochStart = Date.now();
+  // Animate the epoch progress bar
+  _epochBarInterval = setInterval(() => {
+    const bar = document.getElementById('pa-epoch-bar');
+    if (bar) bar.style.width = Math.min(100, (Date.now() - _epochStart) / _epochDuration * 100).toFixed(1) + '%';
+  }, 4000);
+  S.arc.epochTimer = setTimeout(advanceEpoch, _epochDuration);
+}
+
+async function advanceEpoch() {
+  if (!S.running) return;
+  clearInterval(_epochBarInterval);
+  // Save loose memory
+  S.arc.prevTitle   = S.arc.title;
+  S.arc.prevLogline = S.arc.logline;
+  // Advance time of day
+  const world = WORLDS[S.world];
+  S.arc.epochIdx = (S.arc.epochIdx + 1) % world.times.length;
+  S.timeOfDay = world.times[S.arc.epochIdx];
+  // Flash display
+  const weatherEl = document.getElementById('tr-weather');
+  if (weatherEl) weatherEl.textContent = `${S.weather} · ${S.timeOfDay}`;
+  const timeEl = document.getElementById('ps-time');
+  if (timeEl) { timeEl.style.color = 'var(--p-accent)'; setTimeout(() => timeEl.style.color = '', 2500); }
+  updatePanelState();
+  // Generate new arc, then re-schedule
+  await generateArc();
+  scheduleEpoch();
+}
+
+function updatePanelArc() {
+  const titleEl    = document.getElementById('pa-title');
+  const loglineEl  = document.getElementById('pa-logline');
+  const dotsEl     = document.getElementById('pa-dots');
+  const beatDesc   = document.getElementById('pa-beat-desc');
+  const epochLabel = document.getElementById('pa-epoch');
+  if (!titleEl) return;
+
+  if (S.arc.generating) {
+    titleEl.textContent  = 'composing arc…';
+    titleEl.className    = 'arc-title generating';
+    loglineEl.textContent = '';
+    dotsEl.innerHTML     = '';
+    beatDesc.textContent = '';
+    if (epochLabel) epochLabel.textContent = `epoch ${S.arc.epochIdx + 1}`;
+    return;
+  }
+
+  if (!S.arc.ready) {
+    titleEl.textContent  = 'waiting to start';
+    titleEl.className    = 'arc-title generating';
+    loglineEl.textContent = '';
+    dotsEl.innerHTML     = '';
+    beatDesc.textContent = '';
+    if (epochLabel) epochLabel.textContent = '—';
+    return;
+  }
+
+  // Title & logline
+  titleEl.textContent   = S.arc.title;
+  titleEl.className     = 'arc-title';
+  loglineEl.textContent = S.arc.logline;
+
+  // Beat dots
+  dotsEl.innerHTML = '';
+  S.arc.beats.forEach((beat, i) => {
+    const dot = document.createElement('span');
+    dot.className = 'arc-dot' +
+      (i < S.arc.beatIdx ? ' done' : i === S.arc.beatIdx ? ' active' : '');
+    dot.title = beat;
+    dotsEl.appendChild(dot);
+  });
+
+  // Current beat description (strip "setup: " prefix labels)
+  const raw = S.arc.beats[S.arc.beatIdx] || '';
+  beatDesc.textContent = raw.replace(/^[a-z]+:\s*/i, '');
+
+  // Epoch label
+  const world = WORLDS[S.world];
+  if (epochLabel) {
+    const timeLabel = world ? world.times[S.arc.epochIdx] || '' : '';
+    epochLabel.textContent = `epoch ${S.arc.epochIdx + 1} · ${timeLabel}`;
+  }
+}
+
+function startEngine(){
+  S.running=true; S.startTime=Date.now();
+  document.getElementById('start-btn').textContent='■';
+  document.getElementById('start-btn').classList.add('on');
+  document.getElementById('radio-bars').classList.add('live');
+  startAmbient(S.world); startViz(); startGhostLayer(); startShadowBus(); startMood(S.world);
+  S.cdInterval=setInterval(()=>{
+    if(!S.running||!S.nextAt) return;
+    const rem=Math.max(0,S.nextAt-Date.now());
+    document.getElementById('countdown').textContent=rem>800?`${Math.round(rem/1000)}s`:'';
+  },500);
+  setTimeout(()=>fireEvent().then(()=>scheduleNext()),600);
+  applyWeatherToVibe(); scheduleWeatherDrift();
+  generateArc(); scheduleEpoch();
+  // Apply knob position to all layer gains
+  setTimeout(() => updateLayerGains(layerLevel), 100);
+}
+
+function stopEngine(){
+  S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval); clearTimeout(S.weatherTimeout);
+  clearTimeout(S.arc.epochTimer); clearInterval(_epochBarInterval);
+  stopAmbient(); stopViz(); stopGhostLayer(); stopShadowBus(); stopMood();
+  document.getElementById('countdown').textContent='';
+  document.getElementById('start-btn').textContent='▶';
+  document.getElementById('start-btn').classList.remove('on');
+  document.getElementById('radio-bars').classList.remove('live');
+  setStatus('—');
+}
+
+// ═══════════════════════════════════════════════════════════
+// ISOMETRIC VISUALIZATION
+// ═══════════════════════════════════════════════════════════
+const WORLD_PALETTE = {
+  water:  ['#00e5ff','#5bc8f5','#c8f542','#ffe156','#7c6ef5','#f0f0f0','#ff4db8','#5bc8f5'],
+  city:   ['#ff4db8','#ffe156','#f542c2','#ff5252','#7c6ef5','#f0f0f0','#00e5ff','#c8f542'],
+  forest: ['#c8f542','#ffe156','#00e5ff','#7c6ef5','#5bc8f5','#f0f0f0','#ff4db8','#f542c2'],
+};
+
+function hexAlpha(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${Math.max(0,Math.min(1,a)).toFixed(2)})`;
+}
+
+function hashInt(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function makeCreatureProfile(agentId, world) {
+  const h = hashInt(agentId + '_' + world);
+  const pal = WORLD_PALETTE[world] || WORLD_PALETTE.water;
+  const pi = (seed) => pal[((h * (seed * 2654435761 >>> 0)) >>> 0) % pal.length];
+  const fr = (seed) => (((h * (seed * 2654435761 >>> 0)) >>> 0) % 1000) / 1000;
+  const bodies  = ['square','circle','hexagon','pentagon','doubleRing','none'];
+  const heads   = ['circle','square','triangle','ring'];
+  const legTypes= ['none','none','cross','fork','pins'];
+  return {
+    body:       bodies[((h*7)>>>0) % bodies.length],
+    bodyColor:  pi(1), bodyColor2: pi(2),
+    stemLength: 14 + Math.round(fr(3) * 18),
+    stemColor:  pi(4),
+    headShape:  heads[((h*11)>>>0) % heads.length],
+    headColor:  pi(5),
+    numHeads:   fr(6) < 0.65 ? 1 : fr(7) < 0.70 ? 2 : 3,
+    legs:       legTypes[((h*13)>>>0) % legTypes.length],
+    legColor:   pi(6),
+    tailType:   fr(8) < 0.55 ? 'dots' : 'none',
+    tailLength: 2 + Math.round(fr(9) * 6),
+    tailColor:  pi(7),
+    scale:      0.75 + fr(10) * 0.55,
+    wobbleSpeed:0.04 + fr(11) * 0.07,
+  };
+}
+
+const GRID_N = 8;
+
+const AGENT_POS = {
+  water: {
+    heron:        {gx:1.2, gz:3.8}, otter:        {gx:2.5, gz:1.5},
+    swan:         {gx:5.8, gz:2.2}, coot:         {gx:1.8, gz:5.8},
+    water_rail:   {gx:0.6, gz:2.8}, moorhen:      {gx:3.2, gz:1.2},
+    kingfisher:   {gx:2.0, gz:0.7}, frogs:        {gx:0.7, gz:4.8},
+    fish:         {gx:4.2, gz:4.8}, reed_warblers:{gx:0.5, gz:3.8},
+    midges:       {gx:3.8, gz:2.8}, wind:         {gx:6.0, gz:5.5},
+    ducks:        {gx:6.8, gz:5.8}, rain:         {gx:4.0, gz:7.0},
+    fisherman:    {gx:7.2, gz:3.2}, drain:        {gx:7.5, gz:1.2},
+    bat:          {gx:3.5, gz:0.8}, willows:      {gx:0.4, gz:6.5},
+    woodpigeon:   {gx:7.0, gz:7.0},
+  },
+  city: {
+    pedestrian:  {gx:4.0, gz:4.0}, cyclist:     {gx:3.5, gz:1.0},
+    car:         {gx:6.0, gz:3.0}, tram:        {gx:4.0, gz:6.5},
+    pigeons:     {gx:2.0, gz:2.5}, busker:      {gx:1.0, gz:5.0},
+    cafe:        {gx:6.5, gz:6.0}, vendor:      {gx:2.5, gz:5.5},
+    construction:{gx:7.0, gz:2.0}, shopkeeper:  {gx:5.5, gz:1.5},
+    argument:    {gx:3.0, gz:3.5}, phone_call:  {gx:5.0, gz:4.5},
+    delivery:    {gx:6.2, gz:4.8}, rain_city:   {gx:4.0, gz:0.5},
+    wind_city:   {gx:7.5, gz:7.5},
+    sparrows:   {gx:3.8, gz:2.0}, cat:        {gx:5.2, gz:3.8},
+    dog:        {gx:2.8, gz:4.8}, urban_fox:  {gx:6.8, gz:7.0},
+  },
+  forest: {
+    woodpecker:  {gx:2.5, gz:2.0}, owl:        {gx:6.0, gz:2.0},
+    deer:        {gx:4.5, gz:5.0}, crow:       {gx:3.0, gz:1.5},
+    jay:         {gx:5.5, gz:3.0}, squirrel:   {gx:2.0, gz:3.5},
+    wind_canopy: {gx:4.0, gz:0.5}, leaves:     {gx:4.0, gz:4.5},
+    stream:      {gx:7.0, gz:5.5}, fox:        {gx:6.5, gz:6.5},
+    insects:     {gx:3.5, gz:6.0}, treecreeper:{gx:1.5, gz:4.5},
+    woodmice:    {gx:5.0, gz:6.5}, rain_forest:{gx:4.0, gz:4.0},
+  },
+};
+
+const MOBILE = {
+  // water
+  otter:{speed:0.007,wander:3.5}, swan:{speed:0.003,wander:4.5},
+  coot:{speed:0.004,wander:2.5},  kingfisher:{speed:0.014,wander:5.0},
+  ducks:{speed:0.004,wander:3.5}, fish:{speed:0.006,wander:4.0},
+  moorhen:{speed:0.003,wander:2.5},heron:{speed:0.0008,wander:1.5},
+  fisherman:{speed:0.0004,wander:1.2}, bat:{speed:0.010,wander:4.0},
+  // city
+  pedestrian:{speed:0.006,wander:4.0}, cyclist:{speed:0.014,wander:6.0},
+  car:{speed:0.018,wander:7.5},        tram:{speed:0.008,wander:7.0},
+  pigeons:{speed:0.009,wander:3.5},    delivery:{speed:0.007,wander:4.5},
+  phone_call:{speed:0.005,wander:3.0}, argument:{speed:0.012,wander:2.5},
+  sparrows:{speed:0.009,wander:5.0}, cat:{speed:0.003,wander:3.5},
+  dog:{speed:0.009,wander:4.5},      urban_fox:{speed:0.007,wander:6.0},
+  // forest
+  deer:{speed:0.004,wander:4.0},      fox:{speed:0.008,wander:5.0},
+  squirrel:{speed:0.010,wander:4.5},  crow:{speed:0.006,wander:5.0},
+  jay:{speed:0.007,wander:3.5},       woodpecker:{speed:0.002,wander:2.5},
+  woodmice:{speed:0.012,wander:3.0},  insects:{speed:0.002,wander:3.0},
+};
+
+// Environment decorations
+const ENV_WATER_RIPPLES = [
+  {gx:1.5,gz:2.0,phase:0.00},{gx:5.2,gz:1.5,phase:0.33},
+  {gx:2.5,gz:5.8,phase:0.66},{gx:6.2,gz:4.5,phase:0.15},
+  {gx:1.0,gz:4.2,phase:0.50},{gx:4.8,gz:6.8,phase:0.80},
+  {gx:7.2,gz:2.5,phase:0.25},{gx:3.5,gz:3.8,phase:0.45},
+];
+
+const ENV_CITY_BLOCKS = [
+  {gx:0.3, gz:0.3, w:1.4, d:1.0, h:2.4},
+  {gx:6.3, gz:0.3, w:1.4, d:1.2, h:1.8},
+  {gx:0.3, gz:5.8, w:1.2, d:1.9, h:2.8},
+  {gx:6.2, gz:5.5, w:1.5, d:2.2, h:3.2},
+  {gx:2.8, gz:0.4, w:2.0, d:1.0, h:1.4},
+  {gx:5.2, gz:2.2, w:1.0, d:1.2, h:1.6},
+  {gx:1.0, gz:3.2, w:0.8, d:2.0, h:1.3},
+  {gx:3.8, gz:5.2, w:1.2, d:1.0, h:1.1},
+];
+
+// Forest: scattered tree canopy positions
+const ENV_FOREST_TREES = [
+  {gx:1.2, gz:1.0, r:0.70}, {gx:2.8, gz:0.8, r:0.55}, {gx:6.5, gz:1.2, r:0.65},
+  {gx:7.2, gz:2.8, r:0.80}, {gx:0.8, gz:3.5, r:0.60}, {gx:1.5, gz:5.5, r:0.50},
+  {gx:3.5, gz:7.2, r:0.70}, {gx:6.2, gz:6.8, r:0.90}, {gx:7.5, gz:5.2, r:0.55},
+  {gx:5.0, gz:1.5, r:0.60}, {gx:0.5, gz:7.0, r:0.65}, {gx:4.8, gz:7.5, r:0.50},
+  {gx:7.8, gz:4.0, r:0.45}, {gx:2.2, gz:6.8, r:0.60}, {gx:6.8, gz:0.4, r:0.55},
+];
+
+const VIEW = {
+  canvas:null, ctx2d:null, animFrame:null,
+  pulses:{}, secondary:{}, pos:{}, tgt:{}, t:0,
+  creatureProf:{}, creatureAngle:{}, wobble:{}, age:{}, tailHist:{},
+};
+
+function isoP(gx, gz, ox, oy, tw, th) {
+  return { sx: ox+(gx-gz)*tw*0.5, sy: oy+(gx+gz)*th*0.5 };
+}
+
+function tileGeom(cw, ch) {
+  const tw = Math.min(Math.floor(cw/5), 52);
+  const th = Math.round(tw*0.56);
+  return { tw, th, ox:cw*0.5, oy:ch*0.5-(GRID_N*th)*0.5 };
+}
+
+function updatePositions() {
+  WORLDS[S.world].agents.forEach(a => {
+    const home=AGENT_POS[S.world][a.id]; if (!home) return;
+    if (!VIEW.pos[a.id]) { VIEW.pos[a.id]={gx:home.gx,gz:home.gz}; VIEW.tgt[a.id]={gx:home.gx,gz:home.gz}; }
+    const mob=MOBILE[a.id]; if (!mob) return;
+    const pos=VIEW.pos[a.id], tgt=VIEW.tgt[a.id];
+    const dx=tgt.gx-pos.gx, dz=tgt.gz-pos.gz, dist=Math.sqrt(dx*dx+dz*dz);
+    if (dist<0.06) {
+      const angle=Math.random()*Math.PI*2, r=Math.random()*mob.wander;
+      VIEW.tgt[a.id]={ gx:home.gx+Math.cos(angle)*r, gz:home.gz+Math.sin(angle)*r };
+    } else { pos.gx+=(dx/dist)*mob.speed; pos.gz+=(dz/dist)*mob.speed; }
+    // Update creature angle from movement direction in iso screen space
+    const dvx = (tgt.gx - pos.gx) * 1 - (tgt.gz - pos.gz) * 1;
+    const dvy = (tgt.gx - pos.gx) * 0.56 + (tgt.gz - pos.gz) * 0.56;
+    if (Math.abs(dvx) > 0.001 || Math.abs(dvy) > 0.001) {
+      const targetAngle = Math.atan2(dvx, -dvy);
+      const cur = VIEW.creatureAngle[a.id] || 0;
+      let delta = targetAngle - cur;
+      while (delta > Math.PI)  delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      VIEW.creatureAngle[a.id] = cur + delta * 0.06;
+    }
+    // Wobble and age
+    VIEW.age[a.id] = (VIEW.age[a.id] || 0) + 1;
+    const prof = VIEW.creatureProf[a.id];
+    if (prof) VIEW.wobble[a.id] = Math.sin(VIEW.age[a.id] * prof.wobbleSpeed) * 3;
+  });
+}
+
+function drawIsoGrid(c, geom, isForest, isCity) {
+  const { tw, th, ox, oy } = geom; const N=GRID_N;
+  const top=isoP(0,0,ox,oy,tw,th), right=isoP(N,0,ox,oy,tw,th);
+  const bot=isoP(N,N,ox,oy,tw,th), left =isoP(0,N,ox,oy,tw,th);
+
+  c.beginPath();
+  c.moveTo(top.sx,top.sy); c.lineTo(right.sx,right.sy);
+  c.lineTo(bot.sx,bot.sy); c.lineTo(left.sx,left.sy);
+  c.closePath();
+  c.fillStyle = isForest ? 'rgba(8,12,6,0.68)' : isCity ? 'rgba(14,13,10,0.65)' : 'rgba(14,14,10,0.60)';
+  c.fill();
+
+  c.strokeStyle = isForest ? 'rgba(50,65,35,0.38)' : isCity ? 'rgba(90,82,68,0.42)' : 'rgba(88,88,74,0.48)';
+  c.lineWidth=0.6;
+  for (let i=0;i<=N;i++) {
+    const a=isoP(i,0,ox,oy,tw,th),b=isoP(i,N,ox,oy,tw,th);
+    c.beginPath(); c.moveTo(a.sx,a.sy); c.lineTo(b.sx,b.sy); c.stroke();
+    const d=isoP(0,i,ox,oy,tw,th),e=isoP(N,i,ox,oy,tw,th);
+    c.beginPath(); c.moveTo(d.sx,d.sy); c.lineTo(e.sx,e.sy); c.stroke();
+  }
+
+  c.strokeStyle = isForest ? 'rgba(65,85,45,0.65)' : isCity ? 'rgba(112,102,84,0.72)' : 'rgba(108,108,90,0.75)';
+  c.lineWidth=1;
+  c.beginPath();
+  c.moveTo(top.sx,top.sy); c.lineTo(right.sx,right.sy);
+  c.lineTo(bot.sx,bot.sy); c.lineTo(left.sx,left.sy);
+  c.closePath(); c.stroke();
+}
+
+function drawEnvWater(c, geom) {
+  const { tw, th, ox, oy }=geom;
+  ENV_WATER_RIPPLES.forEach(r => {
+    const {sx,sy}=isoP(r.gx,r.gz,ox,oy,tw,th);
+    const prog=((VIEW.t*0.5+r.phase)%1.0);
+    const radius=prog*tw*0.85, alpha=(1-prog)*0.45;
+    c.beginPath(); c.ellipse(sx,sy,Math.max(0.5,radius),Math.max(0.5,radius*0.32),0,0,Math.PI*2);
+    c.strokeStyle=`rgba(95,95,82,${alpha})`; c.lineWidth=0.6; c.stroke();
+  });
+}
+
+function drawEnvCity(c, geom) {
+  const { tw, th, ox, oy }=geom;
+  ENV_CITY_BLOCKS.forEach(b => {
+    const htPx = b.h * th * 1.5;
+    const tl=isoP(b.gx,       b.gz,       ox,oy,tw,th);
+    const tr=isoP(b.gx+b.w,   b.gz,       ox,oy,tw,th);
+    const br=isoP(b.gx+b.w,   b.gz+b.d,   ox,oy,tw,th);
+    const bl=isoP(b.gx,       b.gz+b.d,   ox,oy,tw,th);
+    c.lineWidth=0.7;
+    // left face
+    c.beginPath();
+    c.moveTo(tl.sx,tl.sy-htPx); c.lineTo(bl.sx,bl.sy-htPx);
+    c.lineTo(bl.sx,bl.sy);       c.lineTo(tl.sx,tl.sy);
+    c.closePath();
+    c.fillStyle='rgba(22,20,16,0.50)'; c.fill();
+    c.strokeStyle='rgba(105,98,82,0.52)'; c.stroke();
+    // right face
+    c.beginPath();
+    c.moveTo(tr.sx,tr.sy-htPx); c.lineTo(br.sx,br.sy-htPx);
+    c.lineTo(br.sx,br.sy);       c.lineTo(tr.sx,tr.sy);
+    c.closePath();
+    c.fillStyle='rgba(18,16,12,0.45)'; c.fill();
+    c.strokeStyle='rgba(90,84,70,0.45)'; c.stroke();
+    // top face
+    c.beginPath();
+    c.moveTo(tl.sx,tl.sy-htPx); c.lineTo(tr.sx,tr.sy-htPx);
+    c.lineTo(br.sx,br.sy-htPx); c.lineTo(bl.sx,bl.sy-htPx);
+    c.closePath();
+    c.fillStyle='rgba(30,28,22,0.55)'; c.fill();
+    c.strokeStyle='rgba(115,108,90,0.58)'; c.stroke();
+  });
+}
+
+function drawEnvForest(c, geom) {
+  const { tw, th, ox, oy }=geom;
+  ENV_FOREST_TREES.forEach(t => {
+    const {sx,sy}=isoP(t.gx,t.gz,ox,oy,tw,th);
+    const r=t.r*tw*0.32;
+    const sway=Math.sin(VIEW.t*0.38+t.gx*1.3)*0.05;
+    // trunk
+    c.beginPath();
+    c.moveTo(sx, sy);
+    c.lineTo(sx, sy-r*0.9);
+    c.strokeStyle='rgba(60,50,32,0.42)'; c.lineWidth=0.8; c.stroke();
+    // canopy
+    c.beginPath();
+    c.ellipse(sx, sy-r*0.85, r*0.88, r*0.34, 0, 0, Math.PI*2);
+    c.fillStyle=`rgba(48,60,34,${0.28+sway})`;
+    c.fill();
+    c.strokeStyle='rgba(65,80,45,0.32)'; c.lineWidth=0.5; c.stroke();
+  });
+}
+
+function drawCreatureAt(c2d, agentId, sx, sy, tw, pulsed, involved, warm) {
+  const prof = VIEW.creatureProf[agentId]; if (!prof) return;
+  const wobble = VIEW.wobble[agentId] || 0;
+  const baseAlpha = pulsed ? 0.95 : involved ? 0.72 : warm ? 0.52 : 0.28;
+  const sc = tw * 0.024 * prof.scale;
+
+  // tail dots
+  const hist = VIEW.tailHist[agentId] || [];
+  if (prof.tailType === 'dots') {
+    const SPACING = 3;
+    for (let i = 0; i < prof.tailLength; i++) {
+      const idx = i * SPACING;
+      if (idx >= hist.length) break;
+      const pt = hist[idx];
+      const ta = baseAlpha * (1 - i / prof.tailLength) * 0.65;
+      c2d.beginPath(); c2d.arc(pt.sx, pt.sy, sc * 3.5, 0, Math.PI * 2);
+      c2d.fillStyle = hexAlpha(prof.tailColor, ta); c2d.fill();
+    }
+  }
+
+  // update tail history
+  const tailArr = VIEW.tailHist[agentId] || [];
+  tailArr.unshift({ sx, sy });
+  const maxH = (prof.tailLength * 3) + 10;
+  if (tailArr.length > maxH) tailArr.length = maxH;
+  VIEW.tailHist[agentId] = tailArr;
+
+  c2d.save();
+  c2d.translate(sx, sy);
+  c2d.rotate(VIEW.creatureAngle[agentId] || 0);
+  c2d.scale(sc, sc);
+
+  const sl = prof.stemLength;
+
+  // legs
+  if (prof.legs !== 'none') {
+    c2d.strokeStyle = hexAlpha(prof.legColor, baseAlpha * 0.65);
+    c2d.lineWidth = 1.5;
+    if (prof.legs === 'cross') {
+      c2d.beginPath(); c2d.moveTo(-18, 8); c2d.lineTo(18, 8); c2d.stroke();
+      c2d.beginPath(); c2d.moveTo(0, 0);   c2d.lineTo(0, 22); c2d.stroke();
+    } else if (prof.legs === 'fork') {
+      c2d.beginPath(); c2d.moveTo(-8, 0); c2d.lineTo(-16, 22); c2d.stroke();
+      c2d.beginPath(); c2d.moveTo( 8, 0); c2d.lineTo( 16, 22); c2d.stroke();
+    } else if (prof.legs === 'pins') {
+      c2d.beginPath(); c2d.moveTo(0,0); c2d.lineTo(-12,20); c2d.stroke();
+      c2d.beginPath(); c2d.moveTo(0,0); c2d.lineTo(  0,22); c2d.stroke();
+      c2d.beginPath(); c2d.moveTo(0,0); c2d.lineTo( 12,20); c2d.stroke();
+    }
+  }
+
+  // body
+  c2d.lineWidth = 1.5;
+  if (prof.body === 'square') {
+    c2d.strokeStyle = hexAlpha(prof.bodyColor, baseAlpha);
+    c2d.strokeRect(-10, -10, 20, 20);
+  } else if (prof.body === 'circle') {
+    c2d.beginPath(); c2d.arc(0, 0, 12, 0, Math.PI*2);
+    c2d.strokeStyle = hexAlpha(prof.bodyColor, baseAlpha); c2d.stroke();
+  } else if (prof.body === 'hexagon') {
+    c2d.beginPath();
+    for (let i=0;i<6;i++){const a=Math.PI/180*(60*i-30);i===0?c2d.moveTo(16*Math.cos(a),4+16*Math.sin(a)):c2d.lineTo(16*Math.cos(a),4+16*Math.sin(a));}
+    c2d.closePath(); c2d.strokeStyle=hexAlpha(prof.bodyColor,baseAlpha); c2d.stroke();
+  } else if (prof.body === 'pentagon') {
+    c2d.beginPath();
+    for (let i=0;i<5;i++){const a=Math.PI/180*(72*i-90);i===0?c2d.moveTo(16*Math.cos(a),4+16*Math.sin(a)):c2d.lineTo(16*Math.cos(a),4+16*Math.sin(a));}
+    c2d.closePath(); c2d.strokeStyle=hexAlpha(prof.bodyColor,baseAlpha); c2d.stroke();
+  } else if (prof.body === 'doubleRing') {
+    c2d.beginPath(); c2d.arc(0,6,14,0,Math.PI*2); c2d.strokeStyle=hexAlpha(prof.bodyColor,baseAlpha); c2d.stroke();
+    c2d.beginPath(); c2d.arc(0,6, 8,0,Math.PI*2); c2d.strokeStyle=hexAlpha(prof.bodyColor2,baseAlpha*0.7); c2d.stroke();
+  }
+
+  // stem + head(s)
+  c2d.strokeStyle = hexAlpha(prof.stemColor, baseAlpha * 0.8);
+  c2d.lineWidth = 1.5;
+  c2d.beginPath(); c2d.moveTo(0, 0); c2d.lineTo(0, -sl); c2d.stroke();
+
+  const drawHead = (hx, hy) => {
+    const w2 = wobble * 0.3;
+    c2d.fillStyle = hexAlpha(prof.headColor, baseAlpha);
+    c2d.strokeStyle = hexAlpha(prof.headColor, baseAlpha);
+    c2d.lineWidth = 1.5;
+    if (prof.headShape === 'circle') {
+      c2d.beginPath(); c2d.arc(hx, hy, 5 + w2, 0, Math.PI*2); c2d.fill();
+    } else if (prof.headShape === 'square') {
+      c2d.fillRect(hx-5, hy-5, 10, 10);
+    } else if (prof.headShape === 'triangle') {
+      c2d.beginPath(); c2d.moveTo(hx,hy-6); c2d.lineTo(hx+5.4,hy+3.6); c2d.lineTo(hx-5.4,hy+3.6); c2d.closePath(); c2d.fill();
+    } else if (prof.headShape === 'ring') {
+      c2d.beginPath(); c2d.arc(hx, hy, 5, 0, Math.PI*2); c2d.stroke();
+    }
+  };
+
+  if (prof.numHeads === 1) {
+    drawHead(0, -sl - 6);
+  } else {
+    const spread = (prof.numHeads - 1) * 9;
+    for (let i = 0; i < prof.numHeads; i++) {
+      const hx = -spread + i * (spread * 2 / (prof.numHeads - 1));
+      c2d.strokeStyle = hexAlpha(prof.stemColor, baseAlpha * 0.8);
+      c2d.lineWidth = 1.5;
+      c2d.beginPath(); c2d.moveTo(0, -sl); c2d.lineTo(hx, -sl - 12); c2d.stroke();
+      drawHead(hx, -sl - 18);
+    }
+  }
+
+  // pulse glow ring when active
+  if (pulsed) {
+    c2d.beginPath(); c2d.arc(0, -sl/2, 28, 0, Math.PI*2);
+    c2d.strokeStyle = hexAlpha(prof.headColor, 0.25); c2d.lineWidth = 2; c2d.stroke();
+  }
+
+  c2d.restore();
+}
+
+function drawViz() {
+  const canvas=VIEW.canvas, c=VIEW.ctx2d;
+  if (!canvas||!c) return;
+  const cw=canvas.clientWidth, ch=canvas.clientHeight;
+  c.fillStyle='#0a0a08'; c.fillRect(0,0,cw,ch); VIEW.t+=0.016;
+  updatePositions();
+  const geom=tileGeom(cw,ch);
+  const isForest=false, isCity=false;
+
+  const now=Date.now();
+  WORLDS[S.world].agents.forEach(a => {
+    const home=AGENT_POS[S.world][a.id]; if (!home) return;
+    const curPos=VIEW.pos[a.id]||home;
+    const {sx,sy}=isoP(curPos.gx,curPos.gz,geom.ox,geom.oy,geom.tw,geom.th);
+    const age    =now-(VIEW.pulses[a.id]||0);
+    const secAge =now-(VIEW.secondary[a.id]||0);
+    const pulsed  =age<2800;
+    const involved=!pulsed&&secAge<3200;
+    const warm    =age<8000||secAge<5000;
+
+    // pulse ring (keep from original)
+    if (pulsed) {
+      const t=age/2800, r=(geom.tw*0.13)+t*geom.tw*0.55;
+      c.beginPath(); c.ellipse(sx,sy,Math.max(0.5,r),Math.max(0.5,r*0.38),0,0,Math.PI*2);
+      c.strokeStyle=isForest?`rgba(140,190,100,${(1-t)*0.45})`:isCity?`rgba(220,190,130,${(1-t)*0.45})`:`rgba(196,196,170,${(1-t)*0.45})`;
+      c.lineWidth=0.8; c.stroke();
+    }
+
+    drawCreatureAt(c, a.id, sx, sy, geom.tw, pulsed, involved, warm);
+  });
+}
+
+function startViz() {
+  const canvas=document.getElementById('world-canvas');
+  VIEW.canvas=canvas; VIEW.ctx2d=canvas.getContext('2d');
+  function resize(){
+    const wrap=canvas.parentElement;
+    const W=wrap.offsetWidth,H=wrap.offsetHeight,dpr=devicePixelRatio||1;
+    canvas.width=W*dpr; canvas.height=H*dpr;
+    canvas.style.width=W+'px'; canvas.style.height=H+'px';
+    VIEW.ctx2d.setTransform(dpr,0,0,dpr,0,0);
+  }
+  resize(); VIEW._onResize=resize; window.addEventListener('resize',VIEW._onResize);
+  function loop(){ drawViz(); VIEW.animFrame=requestAnimationFrame(loop); }
+  loop();
+}
+
+function stopViz() {
+  if (VIEW.animFrame) cancelAnimationFrame(VIEW.animFrame);
+  VIEW.animFrame=null;
+  if (VIEW._onResize){ window.removeEventListener('resize',VIEW._onResize); VIEW._onResize=null; }
+  if (VIEW.ctx2d&&VIEW.canvas) VIEW.ctx2d.clearRect(0,0,VIEW.canvas.clientWidth,VIEW.canvas.clientHeight);
+  VIEW.canvas=null; VIEW.ctx2d=null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// LAYER KNOB
+// ═══════════════════════════════════════════════════════════
+let layerLevel = 1.0; // 0=noise only → 1=all layers
+let _knobDragging = false, _knobLastY = 0;
+
+// Canvas geometry
+const KN_SIZE  = 96;
+const KN_CX    = KN_SIZE / 2;   // 48
+const KN_CY    = KN_SIZE / 2;   // 48
+const KN_R     = 28;             // groove arc radius
+const KN_R_DOT = 20;             // indicator dot radius
+const KN_R_LBL = 42;             // label radius
+const KN_START = 3 * Math.PI / 4;         // 135° canvas = 7:30 clock (min position)
+const KN_RANGE = 3 * Math.PI / 2;         // 270° total sweep
+
+const KN_TICKS = [
+  { level:0,   label:'noise'   },
+  { level:1/3, label:'+sfx'    },
+  { level:2/3, label:'+shadow' },
+  { level:1,   label:'+mood'   },
+];
+
+function drawKnob() {
+  const canvas = document.getElementById('layer-knob-canvas');
+  if (!canvas) return;
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, KN_SIZE, KN_SIZE);
+
+  const level = layerLevel;
+  const currentA = KN_START + level * KN_RANGE;
+
+  // Outer shadow ring
+  c.beginPath(); c.arc(KN_CX, KN_CY, KN_R + 7, 0, Math.PI * 2);
+  c.fillStyle = '#0e0d0b'; c.fill();
+  c.strokeStyle = '#1e1c18'; c.lineWidth = 1; c.stroke();
+
+  // Inner knob face
+  c.beginPath(); c.arc(KN_CX, KN_CY, KN_R + 2, 0, Math.PI * 2);
+  const grad = c.createRadialGradient(KN_CX - 5, KN_CY - 5, 2, KN_CX, KN_CY, KN_R + 2);
+  grad.addColorStop(0, '#2a2620');
+  grad.addColorStop(1, '#141210');
+  c.fillStyle = grad; c.fill();
+
+  // Groove (full arc, dark track)
+  c.beginPath(); c.arc(KN_CX, KN_CY, KN_R, KN_START, KN_START + KN_RANGE, false);
+  c.strokeStyle = '#2a2418'; c.lineWidth = 5; c.lineCap = 'round'; c.stroke();
+
+  // Filled arc (amber — active range)
+  if (level > 0.005) {
+    c.beginPath(); c.arc(KN_CX, KN_CY, KN_R, KN_START, currentA, false);
+    // gradient: warm amber at start → brighter warm at end
+    const arcGrad = c.createLinearGradient(
+      KN_CX + KN_R * Math.cos(KN_START), KN_CY + KN_R * Math.sin(KN_START),
+      KN_CX + KN_R * Math.cos(currentA),  KN_CY + KN_R * Math.sin(currentA)
+    );
+    arcGrad.addColorStop(0, '#6a4020');
+    arcGrad.addColorStop(1, '#e8a060');
+    c.strokeStyle = arcGrad; c.lineWidth = 5; c.lineCap = 'round'; c.stroke();
+  }
+
+  // Tick dots + labels
+  c.font = '700 7px IBM Plex Mono, monospace';
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  KN_TICKS.forEach(tick => {
+    const ta = KN_START + tick.level * KN_RANGE;
+    const active = level >= tick.level - 0.02;
+    // Tick dot on groove
+    const tx = KN_CX + KN_R * Math.cos(ta);
+    const ty = KN_CY + KN_R * Math.sin(ta);
+    c.beginPath(); c.arc(tx, ty, 2.5, 0, Math.PI * 2);
+    c.fillStyle = active ? '#e8c060' : '#302820'; c.fill();
+    // Label outside
+    const lx = KN_CX + KN_R_LBL * Math.cos(ta);
+    const ly = KN_CY + KN_R_LBL * Math.sin(ta);
+    c.fillStyle = active ? '#b8a880' : '#403828';
+    c.fillText(tick.label, lx, ly);
+  });
+
+  // Indicator dot
+  const dotX = KN_CX + KN_R_DOT * Math.cos(currentA);
+  const dotY = KN_CY + KN_R_DOT * Math.sin(currentA);
+  c.beginPath(); c.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+  c.fillStyle = '#f4e4b0'; c.fill();
+  // Glow
+  c.beginPath(); c.arc(dotX, dotY, 6, 0, Math.PI * 2);
+  c.fillStyle = 'rgba(244,228,176,0.15)'; c.fill();
+}
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+function updateLayerGains(level) {
+  layerLevel = level;
+  drawKnob();
+  if (!ctx) return;
+  const now = ctx.currentTime, tc = 0.3;
+
+  // Each layer fades in over a 0.18-wide zone:
+  // sfx+ghost: 0.22→0.40  |  shadow: 0.50→0.68  |  mood: 0.78→0.96
+  const sfxMult    = clamp01((level - 0.22) / 0.18);
+  const ghostMult  = sfxMult;
+  const shadowMult = clamp01((level - 0.50) / 0.18);
+  const moodMult   = clamp01((level - 0.78) / 0.18);
+
+  const sfxBase    = parseFloat(document.getElementById('mix-sfx')?.value    ?? 0.75);
+  const ghostBase  = parseFloat(document.getElementById('ghost-slider')?.value ?? 0.35);
+  const shadowBase = parseFloat(document.getElementById('mix-shadow')?.value  ?? 0.72);
+  const moodBase   = parseFloat(document.getElementById('mix-mood')?.value    ?? 0.58);
+
+  if (sfxGain)         sfxGain.gain.setTargetAtTime(sfxBase * sfxMult, now, tc);
+  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(ghostBase * ghostMult, now, tc);
+  if (shadowGain)      shadowGain.gain.setTargetAtTime(shadowBase * shadowMult, now, tc);
+  if (moodGain)        moodGain.gain.setTargetAtTime(moodBase * moodMult, now, tc);
+}
+
+// Drag handling — vertical drag: up = more, down = less
+(function() {
+  const canvas = document.getElementById('layer-knob-canvas');
+  canvas.addEventListener('mousedown', e => {
+    _knobDragging = true; _knobLastY = e.clientY; e.preventDefault();
+  });
+  canvas.addEventListener('touchstart', e => {
+    _knobDragging = true; _knobLastY = e.touches[0].clientY; e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('mousemove', e => {
+    if (!_knobDragging) return;
+    const dy = _knobLastY - e.clientY;
+    _knobLastY = e.clientY;
+    updateLayerGains(clamp01(layerLevel + dy / 160));
+  });
+  window.addEventListener('touchmove', e => {
+    if (!_knobDragging) return;
+    const dy = _knobLastY - e.touches[0].clientY;
+    _knobLastY = e.touches[0].clientY;
+    updateLayerGains(clamp01(layerLevel + dy / 160));
+  }, { passive: false });
+  window.addEventListener('mouseup',  () => { _knobDragging = false; });
+  window.addEventListener('touchend', () => { _knobDragging = false; });
+})();
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+initWorld('water');
+drawKnob();
+
+document.querySelectorAll('.world-btn').forEach(btn=>
+  btn.addEventListener('click',()=>{ if(S.running) stopEngine(); initWorld(btn.dataset.world); })
+);
+document.getElementById('start-btn').addEventListener('click',()=>S.running?stopEngine():startEngine());
+
+
+document.getElementById('density-slider').addEventListener('input', e=>{ S.density=parseFloat(e.target.value); });
+document.getElementById('vol-slider').addEventListener('input', e=>{ if(masterGain) masterGain.gain.setTargetAtTime(parseFloat(e.target.value),ctx.currentTime,0.1); });
+document.getElementById('ghost-slider').addEventListener('input', () => { updateLayerGains(layerLevel); });
+
+setInterval(()=>{ if(S.running) updateClock(); },1000);
+
+document.getElementById('settings-toggle').addEventListener('click', () => {
+  document.getElementById('secondary').classList.toggle('open');
+});
+document.getElementById('mix-noise').addEventListener('input', e => {
+  if (noiseChGain && ctx) noiseChGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.1);
+});
+document.getElementById('mix-sfx').addEventListener('input',    () => updateLayerGains(layerLevel));
+document.getElementById('mix-shadow').addEventListener('input',  () => updateLayerGains(layerLevel));
+document.getElementById('mix-mood').addEventListener('input',    () => updateLayerGains(layerLevel));
+
+// ── Shake button ─────────────────────────────────────────────────
+document.getElementById('shake-btn').addEventListener('click', () => {
+  if (!S.running || !ctx) return;
+  const btn = document.getElementById('shake-btn');
+  btn.classList.remove('shaking');
+  void btn.offsetWidth; // reflow to restart animation
+  btn.classList.add('shaking');
+  setTimeout(() => btn.classList.remove('shaking'), 500);
+
+  // 1. LFO spike — sudden turbulence in the ambient layer
+  if (lfoGain) {
+    const base = WORLDS[S.world].ambient.lfo.depth;
+    lfoGain.gain.cancelScheduledValues(ctx.currentTime);
+    lfoGain.gain.setValueAtTime(base * 6, ctx.currentTime);
+    lfoGain.gain.setTargetAtTime(base, ctx.currentTime + 0.1, 1.8);
+  }
+
+  // 2. ambGain pulse — brief volume thump
+  if (ambGain) {
+    ambGain.gain.cancelScheduledValues(ctx.currentTime);
+    ambGain.gain.setValueAtTime(ambGain.gain.value * 2.2, ctx.currentTime);
+    ambGain.gain.setTargetAtTime(0.55, ctx.currentTime + 0.05, 1.2);
+  }
+
+  // 3. Immediate shadow conflict burst
+  playShadow({ type:'conflict', direction:'all around' });
+
+  // 4. VIBE jolt — activity and tension spike
+  VIBE.activity = Math.min(1, VIBE.activity + 0.4);
+  VIBE.tension  = Math.min(1, VIBE.tension  + 0.35);
+  updateMoodVibe();
+
+  // 6. Play a random cached sound from current world — less muffled than ghost layer
+  if (GHOST.files.length > 0 && ctx) {
+    const file = GHOST.files[Math.floor(Math.random() * GHOST.files.length)];
+    fetch(`/sfx-cache/${encodeURIComponent(file)}`)
+      .then(r => r.ok ? r.arrayBuffer() : null)
+      .then(ab => ab ? ctx.decodeAudioData(ab) : null)
+      .then(buf => {
+        if (!buf || !S.running) return;
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const lpf = ctx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=900+Math.random()*500; lpf.Q.value=0.5;
+        const pan = ctx.createStereoPanner(); pan.pan.value=(Math.random()-0.5)*0.9;
+        const gain = ctx.createGain(); gain.gain.value=0;
+        src.connect(lpf); lpf.connect(pan); pan.connect(gain);
+        gain.connect(sfxGain||masterGain||ctx.destination);
+        const now = ctx.currentTime;
+        gain.gain.setTargetAtTime(0.62, now, 0.08);
+        gain.gain.setTargetAtTime(0, now + buf.duration - 1.0, 0.8);
+        src.start(); src.stop(now + buf.duration + 0.2);
+        // Show label from filename
+        const slug = file.replace(/^[^-]+-/, '').replace(/-\d+\.mp3$/, '').replace(/_/g, ' ');
+        showSFXLabel(slug || file, 'all around');
+        addSoundEntry(file, 'all around', 'shake');
+      }).catch(() => {});
+  }
+});
+
+// ── SFX effect toggle buttons ─────────────────────────────────────
+document.querySelectorAll('.fx-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const fx = btn.dataset.fx;
+    SFX_FX[fx] = !SFX_FX[fx];
+    btn.classList.toggle('active', SFX_FX[fx]);
+    // Rebuild reverb IR next time it's needed
+    if (fx === 'reverb') _sfxConvolver = null;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// SIDE PANEL
+// ═══════════════════════════════════════════════════════════
+let panelOpen = true;
+
+function panelApplyState() {
+  document.getElementById('side-panel').classList.toggle('closed', !panelOpen);
+  const tog = document.getElementById('panel-toggle');
+  tog.classList.toggle('closed', !panelOpen);
+  tog.textContent = panelOpen ? '▸' : '◂';
+  if (panelOpen) tog.style.right = '320px';
+  else           tog.style.right = '0px';
+}
+document.getElementById('panel-toggle').addEventListener('click', () => {
+  panelOpen = !panelOpen;
+  panelApplyState();
+});
+panelApplyState();
+
+function updatePanelState() {
+  const el = id => document.getElementById(id);
+  el('ps-world').textContent   = S.world   || '—';
+  el('ps-weather').textContent = S.weather || '—';
+  el('ps-time').textContent    = S.timeOfDay || '—';
+  el('ps-events').textContent  = S.eventCount || 0;
+}
+
+// Vibe bars update on a smooth interval
+setInterval(() => {
+  const set = (barId, valId, v) => {
+    const bar = document.getElementById(barId);
+    const val = document.getElementById(valId);
+    if (bar) bar.style.width = (v * 100).toFixed(1) + '%';
+    if (val) val.textContent  = v.toFixed(2);
+  };
+  set('vb-activity', 'vv-activity', VIBE.activity);
+  set('vb-tension',  'vv-tension',  VIBE.tension);
+  set('vb-register', 'vv-register', VIBE.register);
+}, 400);
+
+function updatePanelAgents() {
+  const list = document.getElementById('pa-list');
+  if (!list || !S.world) return;
+  const agents = WORLDS[S.world]?.agents || [];
+  list.innerHTML = agents.map(a => {
+    const state = S.agentStates[a.id] || a.state || '—';
+    return `<div class="pa-row" id="par-${a.id}">
+      <span class="pa-name">${a.label}</span>
+      <span class="pa-state">${state}</span>
+    </div>`;
+  }).join('');
+}
+
+function flashPanelAgent(agentLabel) {
+  if (!agentLabel || !S.world) return;
+  const agents = WORLDS[S.world]?.agents || [];
+  const a = agents.find(a => a.label.toLowerCase() === agentLabel.toLowerCase());
+  if (!a) return;
+  const row = document.getElementById('par-' + a.id);
+  if (!row) return;
+  row.classList.add('lit');
+  setTimeout(() => row.classList.remove('lit'), 2500);
+}
+
+function addPanelEntry(rawPrompt, rawResponse, ev) {
+  const list = document.getElementById('pl-list');
+  if (!list) return;
+
+  const time  = new Date().toTimeString().slice(0, 5);
+  const type  = ev.type || 'moment';
+  const agent = ev.agent || '';
+  const desc  = ev.description || '';
+
+  // Sounds summary
+  let soundsHtml = '';
+  if (ev.sounds && ev.sounds.length) {
+    const lines = ev.sounds.map(s =>
+      `<span style="opacity:0.45">${(s.delay||0)/1000}s</span> ${s.prompt}`
+    ).join('<br>');
+    soundsHtml = `<div class="pl-sounds">${lines}</div>`;
+  }
+
+  // Unique id for expand targets
+  const uid = 'ple' + Date.now();
+
+  const entry = document.createElement('div');
+  entry.className = 'pl-entry';
+  entry.innerHTML = `
+    <div class="pl-header">
+      <span class="pl-time">${time}</span>
+      <span class="pl-type ${type}">${type}</span>
+      <span class="pl-agent">${agent}</span>
+    </div>
+    <div class="pl-desc">${desc}</div>
+    ${soundsHtml}
+    <div>
+      <button class="pl-expand" onclick="toggleDetail('${uid}-p')">prompt ▾</button>
+      <button class="pl-expand" onclick="toggleDetail('${uid}-r')">response ▾</button>
+    </div>
+    <div class="pl-detail" id="${uid}-p">${escHtml(rawPrompt)}</div>
+    <div class="pl-detail" id="${uid}-r">${escHtml(rawResponse)}</div>
+  `;
+  list.prepend(entry);
+
+  // Prune to last 20 entries
+  const entries = list.querySelectorAll('.pl-entry');
+  if (entries.length > 20) entries[entries.length - 1].remove();
+
+  // Flash the agent row
+  flashPanelAgent(agent);
+}
+
+function toggleDetail(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Sound entries ──────────────────────────────────────────
+const DIR_ARROW = { left:'←', right:'→', ahead:'↑', behind:'↓', above:'↑', 'all around':'·' };
+
+function filenameToLabel(f) {
+  // New format: world-slug-timestamp.mp3  e.g. water-heron_strikes_at_fish-1716400000000.mp3
+  // Remove world prefix, remove trailing -timestamp, convert underscores to spaces
+  return f.replace(/^[^-]+-/, '').replace(/-\d{10,}\.mp3$/, '').replace(/\.mp3$/, '').replace(/_/g, ' ');
+}
+
+function addSoundEntry(text, direction, kind) {
+  const list = document.getElementById('ps-list');
+  if (!list) return;
+
+  const time = new Date().toTimeString().slice(0, 5);
+  const arrow = direction ? (DIR_ARROW[direction] ?? '·') : '↩';
+  const isFilename = kind === 'ghost' || kind === 'shake';
+  const label = isFilename ? filenameToLabel(text) : text;
+
+  const entry = document.createElement('div');
+  entry.className = 'sound-entry';
+  entry.innerHTML =
+    `<span class="se-time">${time}</span>` +
+    `<span class="se-kind ${kind}">${kind}</span>` +
+    `<span class="se-dir">${arrow}</span>` +
+    `<span class="se-text">${escHtml(label)}</span>`;
+  list.prepend(entry);
+
+  // Fade older entries, prune beyond 12
+  const all = list.querySelectorAll('.sound-entry');
+  all.forEach((el, i) => { if (i >= 3) el.classList.add('fading'); });
+  if (all.length > 12) all[all.length - 1].remove();
+}
+
+function updateCacheCount() {
+  const el = document.getElementById('ps-cache-count');
+  if (!el) return;
+  const total = GHOST.files.length;
+  const world = GHOST.files.filter(f => f.startsWith(S.world)).length;
+  el.textContent = `cache: ${world} this · ${total} total`;
+}
+
+// Refresh cache count whenever ghostFetch runs
+const _origGhostFetch = ghostFetch;
+ghostFetch = async function() {
+  await _origGhostFetch();
+  updateCacheCount();
+};
+
+// Initial panel render (world already selected at load)
+updatePanelState();
+updatePanelAgents();
+ghostFetch(); // populate cache count on load
+</script>
+</body>
+</html>
