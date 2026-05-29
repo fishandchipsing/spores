@@ -169,6 +169,8 @@
     <button class="fx-btn" data-fx="vocoder"  title="ring modulator">vocoder</button>
     <button class="fx-btn" data-fx="granular" title="granular scatter">granular</button>
     <button class="fx-btn" data-fx="lofi"     title="lo-fi tape">lo-fi</button>
+    <button class="fx-btn" data-fx="harmony"  title="harmonizer — adds a third and fifth above">harmony</button>
+    <button class="fx-btn" data-fx="resonate" title="resonator bank — excites pentatonic pitches">resonate</button>
   </div>
 
   <div id="vol-row">
@@ -195,8 +197,9 @@ let playStart  = 0;
 let playDur    = 0;
 let rafId      = null;
 
-const SFX_FX = { reverb: false, vocoder: false, granular: false, lofi: false };
+const SFX_FX = { reverb: false, vocoder: false, granular: false, lofi: false, harmony: false, resonate: false };
 let _sfxConvolver = null;
+let harmonySrcs = []; // extra BufferSourceNodes for harmonizer
 
 // ─── Audio context ───────────────────────────────────────────────────────────
 function ensureCtx() {
@@ -380,6 +383,23 @@ function _buildFxChain(srcNode, bufDuration) {
     node = hp;
   }
 
+  // ── resonate: pentatonic resonator bank ───────────────────
+  if (SFX_FX.resonate) {
+    // C major pentatonic over 2 octaves — high Q makes each filter ring like a bell
+    const PENTA = [130.81, 146.83, 164.81, 196.00, 220.00,
+                   261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
+    const mix  = ctx.createGain(); mix.gain.value = 1.0;
+    const dry  = ctx.createGain(); dry.gain.value = 0.08; // nearly dry suppressed
+    node.connect(dry); dry.connect(mix);
+    PENTA.forEach(freq => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 30;
+      const g  = ctx.createGain(); g.gain.value = 0.38;
+      node.connect(bp); bp.connect(g); g.connect(mix);
+    });
+    node = mix;
+  }
+
   return {
     out: node,
     cleanup: () => toStop.forEach(n => { try { n.stop(); } catch(e){} }),
@@ -435,6 +455,9 @@ function stopCurrent() {
     try { currentSrc.stop(); } catch(e) {}
     currentSrc = null;
   }
+  // stop harmony layers
+  harmonySrcs.forEach(s => { try { s.stop(); } catch(e){} });
+  harmonySrcs = [];
   // stop any effect oscillators (lo-fi wow, vocoder carrier)
   if (currentCleanup) { currentCleanup(); currentCleanup = null; }
   // stop granular re-scatter
@@ -491,6 +514,20 @@ async function playCurrent() {
     src.start();
     currentSrc     = src;
     currentCleanup = cleanup;
+
+    // ── harmonizer: extra detuned copies ──────────────────
+    if (SFX_FX.harmony) {
+      // major third (+400¢) and perfect fifth (+700¢) at lower vol
+      const harmBus = ctx.createGain(); harmBus.gain.value = 0.42;
+      harmBus.connect(masterGain);
+      [400, 700].forEach(cents => {
+        const h = ctx.createBufferSource();
+        h.buffer = buf; h.loop = true; h.detune.value = cents;
+        h.connect(harmBus);
+        h.start();
+        harmonySrcs.push(h);
+      });
+    }
 
     startProgress(buf.duration, true); // progress cycles each loop
   }
