@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>the squirrel</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:     #0c0b08;
+  --dim:    #1a1814;
+  --bark:   #2e2820;
+  --muted:  #5a5040;
+  --text:   #c8b898;
+  --warm:   #e8c878;
+  --bright: #f4e4b0;
+  --amber:  #d4905a;
+  --green:  #7ab870;
+  --seq:    #1e1c16;
+}
+
+html, body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 300;
+  font-size: 13px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px 64px;
+  gap: 0;
+  user-select: none;
+}
+
+body::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+header {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; margin-bottom: 48px;
+}
+h1 {
+  font-size: 11px; font-weight: 300; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--warm);
+}
+.subtitle {
+  font-size: 10px; color: var(--muted); letter-spacing: 0.10em;
+}
+
+/* ── Sound banks ──────────────────────────────────────────── */
+.banks {
+  display: flex; flex-direction: column; gap: 32px;
+  width: 100%; max-width: 680px;
+}
+.bank { display: flex; flex-direction: column; gap: 10px; }
+.bank-label {
+  font-size: 9px; letter-spacing: 0.20em; text-transform: uppercase;
+  color: var(--muted); padding-bottom: 2px;
+  border-bottom: 1px solid var(--bark);
+}
+.pads {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+/* ── Pad ──────────────────────────────────────────────────── */
+.pad {
+  position: relative;
+  background: var(--dim);
+  border: 1px solid var(--bark);
+  border-radius: 6px;
+  padding: 12px 8px 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-height: 72px;
+}
+.pad:hover { background: var(--bark); border-color: var(--muted); }
+.pad:active { transform: scale(0.96); }
+.pad.loading { opacity: 0.5; cursor: wait; }
+.pad.playing {
+  background: #1e1a10;
+  border-color: var(--amber);
+  box-shadow: 0 0 8px rgba(212,144,90,0.3);
+}
+.pad.cached::after {
+  content: ''; position: absolute; top: 5px; right: 5px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--green);
+}
+.pad-icon { font-size: 18px; line-height: 1; }
+.pad-label {
+  font-size: 9px; letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--text); text-align: center;
+}
+.pad-dur {
+  font-size: 8px; color: var(--muted); letter-spacing: 0.06em;
+}
+.pad-bar {
+  position: absolute; bottom: 0; left: 0; height: 2px;
+  background: var(--amber); border-radius: 0 0 6px 6px;
+  width: 0; transition: width 0.1s linear;
+}
+
+/* ── Controls row ─────────────────────────────────────────── */
+.controls {
+  display: flex; align-items: center; gap: 16px;
+  margin-top: 40px;
+  width: 100%; max-width: 680px;
+}
+.ctrl-label {
+  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap;
+}
+.gap-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 90px; height: 2px;
+  background: var(--bark); outline: none; border-radius: 1px;
+}
+.gap-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--muted); cursor: pointer;
+}
+.gap-slider:hover::-webkit-slider-thumb { background: var(--warm); }
+#gap-val { font-size: 9px; color: var(--muted); min-width: 28px; }
+
+.ctrl-btn {
+  background: none; border: 1px solid var(--bark);
+  color: var(--text); font-family: inherit; font-size: 10px;
+  font-weight: 300; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.ctrl-btn:hover { border-color: var(--warm); color: var(--warm); }
+.ctrl-btn.active { border-color: var(--amber); color: var(--amber); }
+.ctrl-btn:disabled { opacity: 0.35; cursor: default; }
+
+.spacer { flex: 1; }
+
+/* ── Sequence builder ─────────────────────────────────────── */
+.seq-section {
+  margin-top: 10px;
+  width: 100%; max-width: 680px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.seq-header {
+  display: flex; align-items: center; gap: 12px;
+}
+.seq-label {
+  font-size: 9px; letter-spacing: 0.20em; text-transform: uppercase;
+  color: var(--muted);
+}
+.seq-hint {
+  font-size: 9px; color: var(--bark); letter-spacing: 0.06em;
+}
+
+.seq-track {
+  min-height: 56px;
+  background: var(--seq);
+  border: 1px solid var(--bark);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+}
+.seq-empty {
+  font-size: 10px; color: var(--bark); letter-spacing: 0.10em;
+  font-style: italic;
+}
+
+.seq-chip {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--dim); border: 1px solid var(--bark);
+  border-radius: 4px; padding: 4px 8px 4px 6px;
+  font-size: 10px; color: var(--text);
+  cursor: pointer; transition: background 0.1s, border-color 0.1s;
+  position: relative;
+}
+.seq-chip:hover { background: var(--bark); }
+.seq-chip:hover .chip-remove { opacity: 1; }
+.seq-chip.playing { border-color: var(--amber); color: var(--warm); }
+.seq-chip.layer-mark::before {
+  content: '‖'; position: absolute; left: -10px;
+  font-size: 9px; color: var(--muted);
+}
+.chip-icon { font-size: 12px; }
+.chip-name { letter-spacing: 0.06em; }
+.chip-remove {
+  font-size: 9px; color: var(--muted); opacity: 0;
+  transition: opacity 0.1s; margin-left: 2px;
+}
+
+/* Arrow between chips */
+.seq-arrow {
+  font-size: 9px; color: var(--bark);
+}
+
+/* ── Playback bar ─────────────────────────────────────────── */
+.play-status {
+  margin-top: 24px;
+  width: 100%; max-width: 680px;
+  display: flex; align-items: center; gap: 12px;
+  min-height: 20px;
+}
+#play-label {
+  font-size: 10px; color: var(--muted); letter-spacing: 0.08em;
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>the squirrel</h1>
+  <div class="subtitle">sound composition kit</div>
+</header>
+
+<div class="banks">
+  <!-- MOVEMENT bank -->
+  <div class="bank">
+    <div class="bank-label">movement</div>
+    <div class="pads" id="bank-movement"></div>
+  </div>
+
+  <!-- SOUNDS bank -->
+  <div class="bank">
+    <div class="bank-label">sounds</div>
+    <div class="pads" id="bank-sounds"></div>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <span class="ctrl-label">gap</span>
+  <input type="range" class="gap-slider" id="gap-slider" min="0" max="2000" step="100" value="400">
+  <span id="gap-val">0.4s</span>
+  <div class="spacer"></div>
+  <button class="ctrl-btn" id="btn-play" disabled>▶ play</button>
+  <button class="ctrl-btn" id="btn-clear">clear</button>
+</div>
+
+<!-- Sequence -->
+<div class="seq-section">
+  <div class="seq-header">
+    <span class="seq-label">sequence</span>
+    <span class="seq-hint">click pads to add · click chip to remove</span>
+  </div>
+  <div class="seq-track" id="seq-track">
+    <span class="seq-empty" id="seq-empty">empty — add sounds above</span>
+  </div>
+</div>
+
+<div class="play-status">
+  <span id="play-label"></span>
+</div>
+
+<script>
+// ── Sound definitions ──────────────────────────────────────────────────────
+const SOUNDS = {
+  movement: [
+    { id:'scurry',  icon:'🐾', label:'scurry',  dur:1.5, prompt:'rapid tiny claws scurrying fast across rough tree bark' },
+    { id:'leap',    icon:'↗',  label:'leap',    dur:2.0, prompt:'small animal launching off branch wood creak then brief air then landing thud' },
+    { id:'land',    icon:'↓',  label:'land',    dur:1.5, prompt:'light four-paw landing on dry autumn leaves crackle' },
+    { id:'climb',   icon:'↑',  label:'climb',   dur:2.0, prompt:'small sharp claws gripping pulling up rough tree bark rhythmic scratching' },
+    { id:'drop',    icon:'●',  label:'drop',    dur:1.5, prompt:'hard acorn dropping bouncing on dry forest floor leaves' },
+    { id:'freeze',  icon:'—',  label:'freeze',  dur:1.5, prompt:'sudden complete stillness faint forest breath near silence' },
+  ],
+  sounds: [
+    { id:'chatter', icon:'!',  label:'chatter', dur:2.0, prompt:'squirrel rapid high pitched chattering alarm call burst' },
+    { id:'gnaw',    icon:'◎',  label:'gnaw',    dur:2.0, prompt:'small teeth gnawing rhythmically on hard nut surface' },
+    { id:'crack',   icon:'×',  label:'crack',   dur:1.0, prompt:'sharp crack of hard nut shell splitting in teeth' },
+    { id:'scratch', icon:'∿',  label:'scratch', dur:1.5, prompt:'small claws scratching digging into dry wood bark' },
+    { id:'chirp',   icon:'♪',  label:'chirp',   dur:1.0, prompt:'single bright squirrel contact chirp call' },
+    { id:'rustle',  icon:'≋',  label:'rustle',  dur:1.5, prompt:'quick body rustle through dry brittle autumn leaves' },
+  ],
+};
+
+// ── Audio context & cache ──────────────────────────────────────────────────
+let ctx = null;
+function getCtx() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+
+const audioCache = {}; // id → AudioBuffer
+
+// ── Sequence state ─────────────────────────────────────────────────────────
+let sequence = []; // array of sound ids
+let playing   = false;
+let stopReq   = false;
+
+// ── Build pads ─────────────────────────────────────────────────────────────
+function buildBank(bankId, sounds) {
+  const container = document.getElementById(bankId);
+  sounds.forEach(s => {
+    const pad = document.createElement('div');
+    pad.className = 'pad';
+    pad.id = `pad-${s.id}`;
+    pad.innerHTML = `
+      <div class="pad-icon">${s.icon}</div>
+      <div class="pad-label">${s.label}</div>
+      <div class="pad-dur">${s.dur}s</div>
+      <div class="pad-bar" id="bar-${s.id}"></div>
+    `;
+    if (audioCache[s.id]) pad.classList.add('cached');
+
+    pad.addEventListener('click', () => onPadClick(s));
+    container.appendChild(pad);
+  });
+}
+
+buildBank('bank-movement', SOUNDS.movement);
+buildBank('bank-sounds',   SOUNDS.sounds);
+
+// ── Pad click ──────────────────────────────────────────────────────────────
+async function onPadClick(s) {
+  const pad = document.getElementById(`pad-${s.id}`);
+  if (pad.classList.contains('loading')) return;
+
+  // Add to sequence
+  addToSequence(s.id);
+
+  // Audition — load if needed then play
+  if (!audioCache[s.id]) {
+    pad.classList.add('loading');
+    try {
+      audioCache[s.id] = await generateSound(s);
+      pad.classList.add('cached');
+    } catch(e) {
+      console.warn('generate failed:', e);
+    }
+    pad.classList.remove('loading');
+  }
+  if (audioCache[s.id]) playBuffer(s.id, audioCache[s.id], s.dur);
+}
+
+// ── Generate via proxy ─────────────────────────────────────────────────────
+async function generateSound(s) {
+  const res = await fetch('/sfx', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: s.prompt,
+      duration_seconds: s.dur,
+      prompt_influence: 0.5,
+      world: `squirrel_${s.id}`,
+    }),
+  });
+  if (!res.ok) throw new Error(`sfx ${res.status}`);
+  const ab  = await res.arrayBuffer();
+  const c   = getCtx();
+  return await c.decodeAudioData(ab);
+}
+
+// ── Play a buffer ──────────────────────────────────────────────────────────
+function playBuffer(id, buf, dur, vol = 1.0) {
+  const c   = getCtx();
+  const src = c.createBufferSource(); src.buffer = buf;
+  const gain = c.createGain(); gain.gain.value = 0;
+  src.connect(gain); gain.connect(c.destination);
+
+  const now = c.currentTime;
+  const attack = 0.015;
+  const release = 0.25;
+  gain.gain.setTargetAtTime(vol, now, attack / 3);
+  gain.gain.setTargetAtTime(0, now + dur - release, release / 3);
+  src.start(now);
+  src.stop(now + dur + 0.3);
+
+  // Animate pad bar
+  const bar = document.getElementById(`bar-${id}`);
+  const pad = document.getElementById(`pad-${id}`);
+  if (bar && pad) {
+    pad.classList.add('playing');
+    bar.style.width = '0%';
+    const start = Date.now();
+    const totalMs = dur * 1000;
+    const interval = setInterval(() => {
+      const pct = Math.min(100, (Date.now() - start) / totalMs * 100);
+      bar.style.width = pct + '%';
+      if (pct >= 100) {
+        clearInterval(interval);
+        bar.style.width = '0%';
+        pad.classList.remove('playing');
+      }
+    }, 40);
+  }
+  return new Promise(r => setTimeout(r, dur * 1000));
+}
+
+// ── Sequence ───────────────────────────────────────────────────────────────
+function addToSequence(id) {
+  sequence.push(id);
+  renderSequence();
+}
+
+function removeFromSequence(idx) {
+  sequence.splice(idx, 1);
+  renderSequence();
+}
+
+function renderSequence() {
+  const track = document.getElementById('seq-track');
+  const empty = document.getElementById('seq-empty');
+  empty.style.display = sequence.length === 0 ? '' : 'none';
+
+  // Remove old chips and arrows (keep the empty span)
+  track.querySelectorAll('.seq-chip, .seq-arrow').forEach(el => el.remove());
+
+  sequence.forEach((id, i) => {
+    const s = findSound(id);
+    if (!s) return;
+
+    if (i > 0) {
+      const arr = document.createElement('span');
+      arr.className = 'seq-arrow'; arr.textContent = '→';
+      track.appendChild(arr);
+    }
+
+    const chip = document.createElement('div');
+    chip.className = 'seq-chip';
+    chip.id = `chip-${i}`;
+    chip.innerHTML = `
+      <span class="chip-icon">${s.icon}</span>
+      <span class="chip-name">${s.label}</span>
+      <span class="chip-remove">✕</span>
+    `;
+    chip.querySelector('.chip-remove').addEventListener('click', (e) => {
+      e.stopPropagation(); removeFromSequence(i);
+    });
+    chip.addEventListener('click', async () => {
+      if (!audioCache[id]) {
+        const pad = document.getElementById(`pad-${id}`);
+        if (pad) pad.classList.add('loading');
+        try { audioCache[id] = await generateSound(s); document.getElementById(`pad-${id}`)?.classList.add('cached'); }
+        catch(e) {}
+        if (pad) pad.classList.remove('loading');
+      }
+      if (audioCache[id]) playBuffer(id, audioCache[id], s.dur);
+    });
+    track.appendChild(chip);
+  });
+
+  document.getElementById('btn-play').disabled = sequence.length === 0 || playing;
+}
+
+function findSound(id) {
+  return [...SOUNDS.movement, ...SOUNDS.sounds].find(s => s.id === id);
+}
+
+// ── Play sequence ──────────────────────────────────────────────────────────
+document.getElementById('btn-play').addEventListener('click', playSequence);
+document.getElementById('btn-clear').addEventListener('click', () => {
+  sequence = []; renderSequence(); setLabel('');
+});
+
+async function playSequence() {
+  if (playing || sequence.length === 0) return;
+  playing = true; stopReq = false;
+  document.getElementById('btn-play').classList.add('active');
+  document.getElementById('btn-play').textContent = '■ stop';
+  document.getElementById('btn-play').onclick = stopSequence;
+
+  const gap = parseInt(document.getElementById('gap-slider').value);
+
+  for (let i = 0; i < sequence.length; i++) {
+    if (stopReq) break;
+    const id = sequence[i];
+    const s  = findSound(id);
+    if (!s) continue;
+
+    // Highlight chip
+    document.querySelectorAll('.seq-chip').forEach((c,j) => c.classList.toggle('playing', j===i));
+    setLabel(`${s.icon} ${s.label}`);
+
+    // Load if needed
+    if (!audioCache[id]) {
+      try { audioCache[id] = await generateSound(s); document.getElementById(`pad-${id}`)?.classList.add('cached'); }
+      catch(e) { console.warn('load failed:', e); }
+    }
+
+    if (audioCache[id] && !stopReq) {
+      await playBuffer(id, audioCache[id], s.dur);
+    }
+
+    // Gap between items
+    if (i < sequence.length - 1 && !stopReq && gap > 0) {
+      await sleep(gap);
+    }
+  }
+
+  document.querySelectorAll('.seq-chip').forEach(c => c.classList.remove('playing'));
+  finishPlay();
+}
+
+function stopSequence() {
+  stopReq = true; finishPlay();
+}
+
+function finishPlay() {
+  playing = false;
+  document.getElementById('btn-play').classList.remove('active');
+  document.getElementById('btn-play').textContent = '▶ play';
+  document.getElementById('btn-play').onclick = playSequence;
+  document.getElementById('btn-play').disabled = sequence.length === 0;
+  setLabel('');
+}
+
+function setLabel(txt) {
+  document.getElementById('play-label').textContent = txt;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Gap slider ─────────────────────────────────────────────────────────────
+document.getElementById('gap-slider').addEventListener('input', e => {
+  const v = parseInt(e.target.value);
+  document.getElementById('gap-val').textContent = (v / 1000).toFixed(1) + 's';
+});
+</script>
+</body>
+</html>
