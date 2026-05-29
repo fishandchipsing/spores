@@ -539,19 +539,19 @@
 <div id="mix">
   <div class="mix-row">
     <span class="mix-label">noise</span>
-    <input type="range" id="mix-noise" class="mix-slider" min="0" max="1" step="0.01" value="0.6">
+    <input type="range" id="mix-noise" class="mix-slider" min="0" max="1" step="0.01" value="1.0">
   </div>
   <div class="mix-row">
     <span class="mix-label">sfx</span>
-    <input type="range" id="mix-sfx" class="mix-slider" min="0" max="1" step="0.01" value="0.75">
+    <input type="range" id="mix-sfx" class="mix-slider" min="0" max="1" step="0.01" value="1.0">
   </div>
   <div class="mix-row">
     <span class="mix-label">shadow</span>
-    <input type="range" id="mix-shadow" class="mix-slider" min="0" max="1" step="0.01" value="0.72">
+    <input type="range" id="mix-shadow" class="mix-slider" min="0" max="1" step="0.01" value="1.0">
   </div>
   <div class="mix-row">
     <span class="mix-label">melody</span>
-    <input type="range" id="mix-mood" class="mix-slider" min="0" max="1" step="0.01" value="0.58">
+    <input type="range" id="mix-mood" class="mix-slider" min="0" max="1" step="0.01" value="1.0">
   </div>
 </div>
 
@@ -562,7 +562,7 @@
   </div>
   <div class="sc-wrap">
     <span class="knob-label">echo</span>
-    <input type="range" id="ghost-slider" class="sc-slider" min="0" max="1" step="0.01" value="0.35">
+    <input type="range" id="ghost-slider" class="sc-slider" min="0" max="1" step="0.01" value="1.0">
   </div>
 </div>
 
@@ -1601,9 +1601,7 @@ function startShadowBus() {
   shadowGain = ctx.createGain();
   shadowGain.gain.value = 0;
   shadowGain.connect(masterGain);
-  shadowGain.gain.setTargetAtTime(
-    parseFloat(document.getElementById('mix-shadow')?.value ?? 0.72), ctx.currentTime, 2.5
-  );
+  // Initial level is set by updateLayerGains called after startEngine
 }
 
 function stopShadowBus() {
@@ -1781,9 +1779,7 @@ function startMood(world) {
   _harmPreMix.connect(dryG); dryG.connect(moodGain);
   _harmPreMix.connect(_harmConv); _harmConv.connect(wetG); wetG.connect(moodGain);
 
-  moodGain.gain.setTargetAtTime(
-    parseFloat(document.getElementById('mix-mood')?.value ?? 0.58), ctx.currentTime, 2.0
-  );
+  // Initial level is set by updateLayerGains called after startEngine
 
   _harmRunning = true;
   _harmCurrent = 0;
@@ -2887,48 +2883,39 @@ function drawKnob() {
 
 function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
+function lerp(a, b, t) { return a + (b - a) * t; }
+
 function updateLayerGains(level) {
   layerLevel = level;
   drawKnob();
   if (!ctx) return;
   const now = ctx.currentTime, tc = 0.35;
 
-  // ── World ←→ Music crossfade ─────────────────────────────────────
-  // Left  (0.0) : full noise  · whisper sfx  · no shadow/melody
-  // Middle(0.5) : low noise   · peak sfx     · shadow+melody present
-  // Right (1.0) : no noise    · no sfx       · full shadow+melody
+  // ── Exact target levels at each position ──────────────────────────
+  //            world(0)  blend(0.5)  music(1.0)
+  // noise        0.20      0.20        0.00
+  // sfx          0.80      0.80        0.00
+  // shadow       0.00      0.80        0.80
+  // melody       0.00      0.20        0.50
 
-  // noise: 1.0 → 0.28 → 0.0
-  const noiseMult = level < 0.5
-    ? 1.0  - (1.0  - 0.28) * (level / 0.5)        // 1.00 → 0.28
-    : 0.28 * (1 - (level - 0.5) / 0.5);            // 0.28 → 0.00
+  const nT  = level < 0.5 ? 0.20 : lerp(0.20, 0.00, (level - 0.5) / 0.5);
+  const sT  = level < 0.5 ? 0.80 : lerp(0.80, 0.00, (level - 0.5) / 0.5);
+  const shT = level < 0.5 ? lerp(0.00, 0.80, level / 0.5) : 0.80;
+  const mT  = level < 0.5 ? lerp(0.00, 0.20, level / 0.5) : lerp(0.20, 0.50, (level - 0.5) / 0.5);
+  const gT  = sT * 0.45; // ghost tracks sfx at 45%
 
-  // sfx + ghost: 0.1 → 1.0 → 0.0  (bell, peak at centre)
-  const sfxMult = level < 0.5
-    ? 0.10 + (1.0 - 0.10) * (level / 0.5)          // 0.10 → 1.00
-    : 1.0  - (level - 0.5) / 0.5;                  // 1.00 → 0.00
+  // Sliders are 0–1 trims on top of these targets (default 1.0 = no trim)
+  const nS  = parseFloat(document.getElementById('mix-noise')?.value    ?? 1.0);
+  const sS  = parseFloat(document.getElementById('mix-sfx')?.value      ?? 1.0);
+  const shS = parseFloat(document.getElementById('mix-shadow')?.value   ?? 1.0);
+  const mS  = parseFloat(document.getElementById('mix-mood')?.value     ?? 1.0);
+  const gS  = parseFloat(document.getElementById('ghost-slider')?.value ?? 1.0);
 
-  // shadow: 0.0 → 0.6 → 1.0  (rises, accelerates right)
-  const shadowMult = level < 0.5
-    ? 0.60 * (level / 0.5)                          // 0.00 → 0.60
-    : 0.60 + 0.40 * ((level - 0.5) / 0.5);         // 0.60 → 1.00
-
-  // melody: same shape as shadow, slight lag
-  const moodMult = level < 0.5
-    ? 0.55 * (level / 0.5)                          // 0.00 → 0.55
-    : 0.55 + 0.45 * ((level - 0.5) / 0.5);         // 0.55 → 1.00
-
-  const noiseBase  = parseFloat(document.getElementById('mix-noise')?.value    ?? 0.60);
-  const sfxBase    = parseFloat(document.getElementById('mix-sfx')?.value      ?? 0.75);
-  const ghostBase  = parseFloat(document.getElementById('ghost-slider')?.value ?? 0.35);
-  const shadowBase = parseFloat(document.getElementById('mix-shadow')?.value   ?? 0.72);
-  const moodBase   = parseFloat(document.getElementById('mix-mood')?.value     ?? 0.58);
-
-  if (noiseChGain)     noiseChGain.gain.setTargetAtTime(noiseBase * noiseMult,   now, tc);
-  if (sfxGain)         sfxGain.gain.setTargetAtTime(sfxBase * sfxMult,           now, tc);
-  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(ghostBase * sfxMult, now, tc);
-  if (shadowGain)      shadowGain.gain.setTargetAtTime(shadowBase * shadowMult,  now, tc);
-  if (moodGain)        moodGain.gain.setTargetAtTime(moodBase * moodMult,        now, tc);
+  if (noiseChGain)     noiseChGain.gain.setTargetAtTime(nT  * nS,  now, tc);
+  if (sfxGain)         sfxGain.gain.setTargetAtTime(sT      * sS,  now, tc);
+  if (ghostMasterGain) ghostMasterGain.gain.setTargetAtTime(gT * gS, now, tc);
+  if (shadowGain)      shadowGain.gain.setTargetAtTime(shT  * shS, now, tc);
+  if (moodGain)        moodGain.gain.setTargetAtTime(mT     * mS,  now, tc);
 }
 
 // Drag handling — vertical drag: up = more, down = less
