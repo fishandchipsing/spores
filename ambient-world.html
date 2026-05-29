@@ -440,6 +440,7 @@
     padding: 1px 5px; border-radius: 2px;
   }
   .se-kind.live  { background: #18221a; color: #80b870; }
+  .se-kind.cache { background: #181e22; color: #6090b8; }
   .se-kind.ghost { background: #1a1820; color: #8070a8; }
   .se-kind.shake { background: #221818; color: #b07050; }
   .se-dir { color: var(--p-dim); flex-shrink: 0; }
@@ -864,10 +865,84 @@ document.getElementById('vol-slider').addEventListener('input', e => {
 });
 
 // ═══════════════════════════════════════════════════════════
+// CACHE-FIRST SOUND MATCHING
+// ═══════════════════════════════════════════════════════════
+const _STOP = new Set(['the','and','with','from','into','onto','over','under','near',
+  'then','than','that','this','for','its','are','was','has','not','but','can','all',
+  'any','some','across','through','between','against','around','sound','noise','out',
+  'its','after','before','their','long','deep','slow','sudden','single','first']);
+
+function _tokens(str) {
+  return str.toLowerCase()
+    .replace(/[_\-]/g, ' ').replace(/[^a-z0-9\s]/g, '')
+    .split(/\s+/).filter(w => w.length > 2 && !_STOP.has(w));
+}
+
+function _scoreFile(promptToks, filename) {
+  // strip world prefix and timestamp suffix to get the descriptive slug
+  const slug = filename.replace(/^[^-]+-/, '').replace(/-\d{10,}\.mp3$/, '');
+  const fileToks = _tokens(slug);
+  let score = 0;
+  promptToks.forEach(pt => {
+    if (fileToks.includes(pt))                                          score += 1.0; // exact
+    else if (fileToks.some(ft => ft.startsWith(pt) || pt.startsWith(ft))) score += 0.5; // prefix
+  });
+  return score;
+}
+
+function findCachedMatch(prompt) {
+  // World-specific files only
+  const files = GHOST.files.filter(f => f.startsWith(S.world + '-'));
+  if (!files.length) return null;
+  const toks = _tokens(prompt);
+  if (!toks.length) return null;
+  let best = null, bestScore = 0;
+  files.forEach(f => {
+    const s = _scoreFile(toks, f);
+    if (s > bestScore) { bestScore = s; best = f; }
+  });
+  // Threshold: 1.5 = roughly 2 matching concepts (biased toward reuse)
+  return bestScore >= 1.5 ? best : null;
+}
+
+// Play a cached file through the SFX audio chain (not the ghost chain)
+async function playCachedSFX(filename, direction, vol) {
+  const res = await fetch(`/sfx-cache/${encodeURIComponent(filename)}`);
+  if (!res.ok) return false;
+  const ab  = await res.arrayBuffer();
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume();
+  const buf = await ctx.decodeAudioData(ab);
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const lp  = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=900; lp.Q.value=0.7;
+  const pan = ctx.createStereoPanner();
+  pan.pan.value = ({left:-0.7,right:0.7,ahead:0,behind:0,above:0,'all around':0})[direction] ?? 0;
+  const sg  = ctx.createGain(); sg.gain.value = 0;
+  src.connect(lp); lp.connect(pan); pan.connect(sg);
+  sg.connect(sfxGain || masterGain || ctx.destination);
+  const st = ctx.currentTime;
+  sg.gain.setTargetAtTime(0.55 * vol, st, 0.3);
+  sg.gain.setTargetAtTime(0, st + 3.5, 0.9);
+  src.start();
+  const label = filenameToLabel(filename);
+  showSFXLabel(label, direction);
+  addSoundEntry(filename, direction, 'cache');
+  debugLine('sfx', '← ' + label.slice(0, 36));
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════
 // ELEVENLABS SFX
 // ═══════════════════════════════════════════════════════════
 async function playSFX(soundPrompt, direction, vol=1.0) {
   debugLine('sfx', soundPrompt.slice(0,38));
+
+  // Try cache first — only generate if nothing fits
+  const match = findCachedMatch(soundPrompt);
+  if (match) {
+    try { await playCachedSFX(match, direction, vol); return; } catch(e) { /* fall through */ }
+  }
+
   try {
     const res = await fetch('/sfx', {
       method:'POST', headers:{'Content-Type':'application/json'},
