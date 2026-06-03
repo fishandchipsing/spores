@@ -1069,6 +1069,7 @@ const WORLD_INSTRUMENT = {
     atkTime: 0.55,  sustainTC: 5.5,
     detuneRange: 3,
     arpInterval: 480,
+    maxMidi: 79,   // G5 — ethereal, water can breathe high
   },
   city: {
     wave: 'square', wave2: 'square',
@@ -1078,6 +1079,7 @@ const WORLD_INSTRUMENT = {
     detuneRange: 9,
     arpInterval: 160,
     drums: true,
+    maxMidi: 67,   // G4 — keep city grounded, square waves bite at high freqs
   },
   forest: {
     wave: 'sine',   wave2: 'sine',
@@ -1088,6 +1090,7 @@ const WORLD_INSTRUMENT = {
     vibrato: { rate: 5.4, depth: 0.006 },
     breath: true,
     arpInterval: 310,
+    maxMidi: 74,   // D5 — flute sits mid-high but not shrill
   },
 };
 
@@ -2059,11 +2062,12 @@ const HARM_EV_DEGREE = {
   residue:     [0, 5],     // I or VI — settling
 };
 
-let _harmOscs    = [];   // { osc, env } pairs currently sounding
-let _harmPreMix  = null; // pre-reverb sum
-let _harmConv    = null; // reverb convolver
-let _harmTimer   = null; // slow chord change timer
-let _harmCurrent = 0;    // current chord degree
+let _harmOscs        = [];   // { osc, env } pairs currently sounding
+let _harmPreMix      = null; // pre-reverb sum
+let _harmConv        = null; // reverb convolver
+let _harmTimer       = null; // slow chord change timer
+let _harmCurrent     = 0;    // current chord degree
+let _melodyPhraseTimer = null; // independent melody phrase timer
 let _harmRunning = false;
 let _harmColourOverride = null; // null=auto, or 'triad'|'7th'|'9th'|'sus4'
 let _harmSpeedMult = 1.0;       // chord change speed multiplier
@@ -2191,6 +2195,16 @@ function _scheduleNextChord() {
   }, delay);
 }
 
+function _scheduleMelodyPhrase() {
+  clearTimeout(_melodyPhraseTimer);
+  if (!_harmRunning) return;
+  // Fires every 20-60s independent of events, shorter when more active
+  const delay = (20 + (1 - VIBE.activity) * 40 + Math.random() * 20) * 1000;
+  _melodyPhraseTimer = setTimeout(() => {
+    if (_harmRunning) { _playMelodyEvent(); _scheduleMelodyPhrase(); }
+  }, delay);
+}
+
 function startMood(world) {
   stopMood();
   if (!ctx) return;
@@ -2225,11 +2239,13 @@ function startMood(world) {
   const cfg = WORLD_HARMONY[world] || WORLD_HARMONY.water;
   _playHarmChord(cfg.prog[0]);
   _scheduleNextChord();
+  _scheduleMelodyPhrase();
 }
 
 function stopMood() {
   _harmRunning = false;
   clearTimeout(_harmTimer);
+  clearTimeout(_melodyPhraseTimer);
   _stopHarmOscs(0.8);
   stopCityDrums();
   if (moodGain)   { moodGain.disconnect();   moodGain = null; }
@@ -2397,10 +2413,6 @@ async function fireEvent(){
     updateVibe(ev);
     // Shadow: arm the phrase — fires when the SFX buffer is decoded (or 2s fallback)
     armShadow(ev);
-    // Harmony: steer chord based on event type (probabilistic)
-    nudgeHarmony(ev);
-    // Melody event phrase: quick figure after action events
-    _playMelodyEvent(ev.type);
     flashAgent(ev.agent, ev.agent_updates);
     updateClock();
     addPanelEntry(rawPrompt, rawResponse, ev);
@@ -4214,12 +4226,8 @@ function _drumHat(t) {
 // MELODY EVENT PHRASE — quick melodic run after world events
 // Fires probabilistically, uses per-world instrument timing
 // ═══════════════════════════════════════════════════════════
-function _playMelodyEvent(evType) {
+function _playMelodyEvent() {
   if (!_harmRunning || !ctx || !moodGain) return;
-  // Probability varies by event type — active events get more phrases
-  const prob = { conflict:0.85, interaction:0.70, moment:0.55,
-                 shift:0.50, passing:0.40, distant:0.25, residue:0.20 };
-  if (Math.random() > (prob[evType] ?? 0.40)) return;
 
   const instr = WORLD_INSTRUMENT[S.world] || WORLD_INSTRUMENT.water;
   const midis = _getHarmMidis(_harmCurrent);
@@ -4229,9 +4237,10 @@ function _playMelodyEvent(evType) {
   const interval = (instr.arpInterval / 1000) * (0.7 + VIBE.activity * 0.6);
 
   for (let i = 0; i < numNotes; i++) {
-    // Pick from chord, sometimes add octave jump
+    // Pick from chord, occasionally add octave jump — clamped per world
     let midi = midis[Math.floor(Math.random() * midis.length)];
-    if (Math.random() < 0.25) midi += 12; // octave up
+    if (Math.random() < 0.25) midi += 12;
+    midi = Math.min(midi, instr.maxMidi); // clamp high notes per world
     const freq = _harmMidiToHz(midi);
     const t = now + i * interval + 0.05;
 
