@@ -1593,14 +1593,18 @@ let ghostMasterGain = null;
 const GHOST = { active:false, files:[], loopTimer:null, refreshTimer:null };
 
 async function ghostFetch() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
   try {
-    const res = await fetch('/sfx-cache');
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), 5000);
+    const res  = await fetch('/sfx-cache', { signal: ctrl.signal });
+    clearTimeout(tid);
     if (res.ok) {
       const all = await res.json();
       const worldFiles = all.filter(f => f.startsWith(S.world));
       GHOST.files = worldFiles.length > 0 ? worldFiles : all;
     }
-  } catch(e) {}
+  } catch(e) { /* network unavailable — skip silently */ }
 }
 
 async function ghostPlay() {
@@ -2262,12 +2266,7 @@ function _scheduleNextChord() {
 function _scheduleMelodyPhrase() {
   clearTimeout(_melodyPhraseTimer);
   if (!_harmRunning) return;
-  // City: rapid rhythmic phrases every 3-7s
-  // Others: slow atmospheric 20-60s
-  const isCity = S.world === 'city';
-  const delay  = isCity
-    ? (3 + (1 - VIBE.activity) * 4 + Math.random() * 3) * 1000
-    : (20 + (1 - VIBE.activity) * 40 + Math.random() * 20) * 1000;
+  const delay = (20 + (1 - VIBE.activity) * 40 + Math.random() * 20) * 1000;
   _melodyPhraseTimer = setTimeout(() => {
     if (_harmRunning) { _playMelodyEvent(); _scheduleMelodyPhrase(); }
   }, delay);
@@ -4350,35 +4349,12 @@ function _bassNote(midi, t, dur) {
 // ── Traffic system — cycles from calm to intense ─────────────
 // Three overlapping slow sines give an organic irregular rhythm
 // that feels like real traffic patterns (lights, rush hour, lulls)
-function _trafficIntensity() {
-  const t = Date.now() / 1000;
-  const a = Math.sin(t * 0.048) * 0.38;  // ~130s cycle — main pulse
-  const b = Math.sin(t * 0.11)  * 0.32;  // ~57s  — medium wave
-  const c = Math.sin(t * 0.27)  * 0.20;  // ~23s  — quick bursts
-  return Math.max(0, Math.min(1, 0.45 + a + b + c));
-}
-
 function startCityAmbient() {
   const schedule = () => {
     if (S.world !== 'city' || !S.running || !ctx) return;
-    const intensity = _trafficIntensity();
-
-    // Calm: one car every 6-14s / Intense: cars every 0.3-1.5s
-    const minDelay = lerp(6000,  300, intensity);
-    const maxDelay = lerp(14000, 1500, intensity);
-    const delay    = minDelay + Math.random() * (maxDelay - minDelay);
-
+    const delay = 3500 + Math.random() * 9000;
     _cityAmbientTimer = setTimeout(() => {
-      if (S.world !== 'city' || !S.running) return;
-      const burst = _trafficIntensity();
-      // At peak intensity, sometimes release a platoon of 2-4 cars together
-      // (like a green light dropping a queue)
-      const platoon = burst > 0.75 && Math.random() < burst * 0.55
-        ? 2 + Math.floor(Math.random() * 3)
-        : 1;
-      for (let i = 0; i < platoon; i++) {
-        setTimeout(() => _carWhoosh(burst), i * (120 + Math.random() * 280));
-      }
+      _carWhoosh();
       schedule();
     }, delay);
   };
@@ -4390,49 +4366,33 @@ function stopCityAmbient() {
   _cityAmbientTimer = null;
 }
 
-function _carWhoosh(intensity = 0.5) {
+function _carWhoosh() {
   if (!ctx || !ghostMasterGain) return;
   const fromLeft = Math.random() < 0.5;
-
-  // Faster cars at higher intensity (shorter crossing time)
-  const dur = lerp(1.6, 0.55, intensity) + Math.random() * 0.4;
+  const dur = 1.0 + Math.random() * 0.8;
   const now = ctx.currentTime;
-
-  const s  = ctx.createBufferSource();
-  s.buffer = _mkNoiseBuf(dur + 0.4, 'pink');
-
-  // Bandpass sweep — higher freq cars at rush hour (faster, more engine noise)
-  const loFreq = lerp(400,  700, intensity);
-  const hiFreq = lerp(1100, 2200, intensity);
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.2;
-  bp.frequency.setValueAtTime(fromLeft ? loFreq : hiFreq, now);
-  bp.frequency.linearRampToValueAtTime(fromLeft ? hiFreq : loFreq, now + dur);
-
-  // Pan sweep: full left→right or right→left
+  const s   = ctx.createBufferSource();
+  s.buffer  = _mkNoiseBuf(dur + 0.3, 'pink');
+  const bp  = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(fromLeft ? 550 : 1400, now);
+  bp.frequency.linearRampToValueAtTime(fromLeft ? 1400 : 550, now + dur);
   const pan = ctx.createStereoPanner();
-  pan.pan.setValueAtTime(fromLeft ? -1.0 :  1.0, now);
-  pan.pan.linearRampToValueAtTime(fromLeft ?  1.0 : -1.0, now + dur);
-
+  pan.pan.setValueAtTime(fromLeft ? -1.0 : 1.0, now);
+  pan.pan.linearRampToValueAtTime(fromLeft ? 1.0 : -1.0, now + dur);
   const env = ctx.createGain();
   s.connect(bp); bp.connect(env); env.connect(pan); pan.connect(ghostMasterGain);
-
-  // Louder and sharper envelope at high intensity
-  const peakVol = lerp(0.10, 0.28, intensity) + Math.random() * 0.06;
-  const riseT   = dur * lerp(0.40, 0.22, intensity);
+  const peakVol = 0.12 + Math.random() * 0.10;
   env.gain.setValueAtTime(0, now);
-  env.gain.linearRampToValueAtTime(peakVol, now + riseT);
-  env.gain.setTargetAtTime(0, now + riseT + 0.08, dur * lerp(0.28, 0.14, intensity));
-  s.start(now); s.stop(now + dur + 0.5);
+  env.gain.linearRampToValueAtTime(peakVol, now + dur * 0.35);
+  env.gain.setTargetAtTime(0, now + dur * 0.55, 0.18);
+  s.start(now); s.stop(now + dur + 0.4);
 }
 
 // ═══════════════════════════════════════════════════════════
-// MELODY PHRASES — world-specific
-// City: rhythmic vibraphone locked to BPM grid with swing + approach notes
-// Others: floating atmospheric phrases
+// MELODY PHRASES — floating atmospheric phrases
 // ═══════════════════════════════════════════════════════════
 function _playMelodyEvent() {
   if (!_harmRunning || !ctx || !moodGain) return;
-  if (S.world === 'city') { _playCityVibPhrase(); return; }
 
   const instr    = WORLD_INSTRUMENT[S.world] || WORLD_INSTRUMENT.water;
   const midis    = _getHarmMidis(_harmCurrent);
@@ -4461,65 +4421,6 @@ function _playMelodyEvent() {
     env.gain.linearRampToValueAtTime(noteVol, t + instr.atkTime);
     env.gain.setTargetAtTime(0, t + instr.atkTime + 0.04, instr.sustainTC * 0.35);
     osc.start(t); osc.stop(t + instr.sustainTC * 2);
-  }
-}
-
-function _playCityVibPhrase() {
-  if (!ctx || !_harmPreMix) return;
-  const instr   = WORLD_INSTRUMENT.city;
-  const midis   = _getHarmMidis(_harmCurrent);
-  const dest    = _harmPreMix; // goes through reverb for warmth
-  const now     = ctx.currentTime;
-  const bpm     = 108 + VIBE.activity * 32;
-  const eighth  = (60 / bpm) / 2;
-  const swing   = eighth * 0.14; // swing offset on off-beats
-
-  // 4-8 rhythmic hits; mix of chord tones + chromatic approach notes
-  const numNotes = 4 + Math.floor(Math.random() * 5);
-  let pos = 0;
-  for (let i = 0; i < numNotes; i++) {
-    // Quantise to 8th grid with swing
-    const onBeat = (i % 2 === 0);
-    const t = now + pos + (onBeat ? 0 : swing) + 0.02;
-
-    // Chord tone, occasionally a chromatic approach note ±1 semitone
-    let midi = midis[Math.floor(Math.random() * midis.length)];
-    if (Math.random() < 0.28) midi += (Math.random() < 0.5 ? 1 : -1); // approach
-    midi = Math.min(midi, instr.maxMidi);
-    const freq = _harmMidiToHz(midi);
-
-    // Short punchy sustain for rhythmic feel — shorter on weak beats
-    const sustTC = onBeat ? instr.sustainTC * 0.30 : instr.sustainTC * 0.18;
-    const noteVol = (onBeat ? 0.13 : 0.09) + VIBE.activity * 0.05;
-
-    const osc = ctx.createOscillator();
-    osc.type = instr.wave; osc.frequency.value = freq;
-    osc.detune.value = (Math.random() - 0.5) * instr.detuneRange;
-    const env = ctx.createGain();
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() - 0.5) * 0.55;
-    osc.connect(env); env.connect(pan); pan.connect(dest);
-
-    env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(noteVol, t + instr.atkTime);
-    env.gain.setTargetAtTime(0, t + instr.atkTime + 0.01, sustTC);
-
-    // Tremolo shimmer
-    if (instr.tremolo) {
-      const tLFO   = ctx.createOscillator();
-      tLFO.type    = 'sine'; tLFO.frequency.value = instr.tremolo.rate;
-      const tDepth = ctx.createGain(); tDepth.gain.value = instr.tremolo.depth * noteVol;
-      tLFO.connect(tDepth); tDepth.connect(env.gain);
-      tLFO.start(t + instr.atkTime); tLFO.stop(t + sustTC * 4 + 0.5);
-    }
-
-    osc.start(t); osc.stop(t + sustTC * 5);
-
-    // Advance: mostly 8ths, occasionally a 16th rest or dotted 8th
-    const r = Math.random();
-    pos += r < 0.15 ? eighth * 0.5   // 16th gap (syncopation)
-         : r < 0.25 ? eighth * 1.5   // dotted 8th
-         :            eighth;
   }
 }
 
