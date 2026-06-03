@@ -2241,8 +2241,12 @@ function _scheduleNextChord() {
 function _scheduleMelodyPhrase() {
   clearTimeout(_melodyPhraseTimer);
   if (!_harmRunning) return;
-  // Fires every 20-60s independent of events, shorter when more active
-  const delay = (20 + (1 - VIBE.activity) * 40 + Math.random() * 20) * 1000;
+  // City: rapid rhythmic phrases every 3-7s
+  // Others: slow atmospheric 20-60s
+  const isCity = S.world === 'city';
+  const delay  = isCity
+    ? (3 + (1 - VIBE.activity) * 4 + Math.random() * 3) * 1000
+    : (20 + (1 - VIBE.activity) * 40 + Math.random() * 20) * 1000;
   _melodyPhraseTimer = setTimeout(() => {
     if (_harmRunning) { _playMelodyEvent(); _scheduleMelodyPhrase(); }
   }, delay);
@@ -2277,7 +2281,7 @@ function startMood(world) {
     // Separate dry bus for percussion — bypasses reverb so kicks stay punchy
     _drumBus = ctx.createGain(); _drumBus.gain.value = 1.0;
     _drumBus.connect(moodGain);
-    startCityDrums(); startCityBass(); startCityAmbient();
+    startCityDrums(); startCityBass(); startCityAmbient(); startCityShadow();
   }
 
   // Initial level is set by updateLayerGains called after startEngine
@@ -2295,7 +2299,7 @@ function stopMood() {
   clearTimeout(_harmTimer);
   clearTimeout(_melodyPhraseTimer);
   _stopHarmOscs(0.8);
-  stopCityDrums(); stopCityBass(); stopCityAmbient();
+  stopCityDrums(); stopCityBass(); stopCityAmbient(); stopCityShadow();
   if (moodGain)   { moodGain.disconnect();   moodGain = null; }
   if (_harmConv)  { _harmConv.disconnect();  _harmConv = null; }
   if (_drumBus)   { _drumBus.disconnect();   _drumBus = null; }
@@ -2852,7 +2856,7 @@ function stopEngine(){
   S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval); clearTimeout(S.weatherTimeout);
   clearTimeout(S.arc.epochTimer); clearInterval(_epochBarInterval);
   stopAmbient(); stopViz(); stopGhostLayer(); stopShadowBus(); stopMood();
-  stopWeatherLayer(); stopCityDrums(); stopCityBass(); stopCityAmbient();
+  stopWeatherLayer(); stopCityDrums(); stopCityBass(); stopCityAmbient(); stopCityShadow();
   document.getElementById('countdown').textContent='';
   document.getElementById('start-btn').textContent='▶';
   document.getElementById('start-btn').classList.remove('on');
@@ -4392,31 +4396,32 @@ function _carWhoosh() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// MELODY EVENT PHRASE — quick melodic run after world events
-// Fires probabilistically, uses per-world instrument timing
+// MELODY PHRASES — world-specific
+// City: rhythmic vibraphone locked to BPM grid with swing + approach notes
+// Others: floating atmospheric phrases
 // ═══════════════════════════════════════════════════════════
 function _playMelodyEvent() {
   if (!_harmRunning || !ctx || !moodGain) return;
+  if (S.world === 'city') { _playCityVibPhrase(); return; }
 
-  const instr = WORLD_INSTRUMENT[S.world] || WORLD_INSTRUMENT.water;
-  const midis = _getHarmMidis(_harmCurrent);
-  const dest  = _harmPreMix || moodGain;
-  const now   = ctx.currentTime;
-  const numNotes = 2 + Math.floor(Math.random() * 3); // 2-4 notes
+  const instr    = WORLD_INSTRUMENT[S.world] || WORLD_INSTRUMENT.water;
+  const midis    = _getHarmMidis(_harmCurrent);
+  const dest     = _harmPreMix || moodGain;
+  const now      = ctx.currentTime;
+  const numNotes = 2 + Math.floor(Math.random() * 3);
   const interval = (instr.arpInterval / 1000) * (0.7 + VIBE.activity * 0.6);
 
   for (let i = 0; i < numNotes; i++) {
-    // Pick from chord, occasionally add octave jump — clamped per world
     let midi = midis[Math.floor(Math.random() * midis.length)];
     if (Math.random() < 0.25) midi += 12;
-    midi = Math.min(midi, instr.maxMidi); // clamp high notes per world
+    midi = Math.min(midi, instr.maxMidi);
     const freq = _harmMidiToHz(midi);
-    const t = now + i * interval + 0.05;
+    const t    = now + i * interval + 0.05;
 
     const osc = ctx.createOscillator();
     osc.type = instr.wave; osc.frequency.value = freq;
     osc.detune.value = (Math.random() - 0.5) * instr.detuneRange * 0.5;
-    const env = ctx.createGain(); env.gain.value = 0;
+    const env = ctx.createGain();
     const pan = ctx.createStereoPanner();
     pan.pan.value = (Math.random() - 0.5) * 0.45;
     osc.connect(env); env.connect(pan); pan.connect(dest);
@@ -4425,21 +4430,96 @@ function _playMelodyEvent() {
     env.gain.setValueAtTime(0, t);
     env.gain.linearRampToValueAtTime(noteVol, t + instr.atkTime);
     env.gain.setTargetAtTime(0, t + instr.atkTime + 0.04, instr.sustainTC * 0.35);
-
-    // Vibraphone tremolo on melody notes too
-    if (instr.tremolo) {
-      const tLFO = ctx.createOscillator();
-      tLFO.type = 'sine';
-      tLFO.frequency.value = instr.tremolo.rate;
-      const tDepth = ctx.createGain();
-      tDepth.gain.value = instr.tremolo.depth * noteVol;
-      tLFO.connect(tDepth); tDepth.connect(env.gain);
-      tLFO.start(t + instr.atkTime);
-      tLFO.stop(t + instr.sustainTC * 2);
-    }
-
     osc.start(t); osc.stop(t + instr.sustainTC * 2);
   }
+}
+
+function _playCityVibPhrase() {
+  if (!ctx || !_harmPreMix) return;
+  const instr   = WORLD_INSTRUMENT.city;
+  const midis   = _getHarmMidis(_harmCurrent);
+  const dest    = _harmPreMix; // goes through reverb for warmth
+  const now     = ctx.currentTime;
+  const bpm     = 108 + VIBE.activity * 32;
+  const eighth  = (60 / bpm) / 2;
+  const swing   = eighth * 0.14; // swing offset on off-beats
+
+  // 4-8 rhythmic hits; mix of chord tones + chromatic approach notes
+  const numNotes = 4 + Math.floor(Math.random() * 5);
+  let pos = 0;
+  for (let i = 0; i < numNotes; i++) {
+    // Quantise to 8th grid with swing
+    const onBeat = (i % 2 === 0);
+    const t = now + pos + (onBeat ? 0 : swing) + 0.02;
+
+    // Chord tone, occasionally a chromatic approach note ±1 semitone
+    let midi = midis[Math.floor(Math.random() * midis.length)];
+    if (Math.random() < 0.28) midi += (Math.random() < 0.5 ? 1 : -1); // approach
+    midi = Math.min(midi, instr.maxMidi);
+    const freq = _harmMidiToHz(midi);
+
+    // Short punchy sustain for rhythmic feel — shorter on weak beats
+    const sustTC = onBeat ? instr.sustainTC * 0.30 : instr.sustainTC * 0.18;
+    const noteVol = (onBeat ? 0.13 : 0.09) + VIBE.activity * 0.05;
+
+    const osc = ctx.createOscillator();
+    osc.type = instr.wave; osc.frequency.value = freq;
+    osc.detune.value = (Math.random() - 0.5) * instr.detuneRange;
+    const env = ctx.createGain();
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() - 0.5) * 0.55;
+    osc.connect(env); env.connect(pan); pan.connect(dest);
+
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(noteVol, t + instr.atkTime);
+    env.gain.setTargetAtTime(0, t + instr.atkTime + 0.01, sustTC);
+
+    // Tremolo shimmer
+    if (instr.tremolo) {
+      const tLFO   = ctx.createOscillator();
+      tLFO.type    = 'sine'; tLFO.frequency.value = instr.tremolo.rate;
+      const tDepth = ctx.createGain(); tDepth.gain.value = instr.tremolo.depth * noteVol;
+      tLFO.connect(tDepth); tDepth.connect(env.gain);
+      tLFO.start(t + instr.atkTime); tLFO.stop(t + sustTC * 4 + 0.5);
+    }
+
+    osc.start(t); osc.stop(t + sustTC * 5);
+
+    // Advance: mostly 8ths, occasionally a 16th rest or dotted 8th
+    const r = Math.random();
+    pos += r < 0.15 ? eighth * 0.5   // 16th gap (syncopation)
+         : r < 0.25 ? eighth * 1.5   // dotted 8th
+         :            eighth;
+  }
+}
+
+// ── City shadow ticker — dense punchy stabs between events ──
+let _cityShadowTimer = null;
+
+function startCityShadow() {
+  const tick = () => {
+    if (S.world !== 'city' || !S.running || !ctx || !shadowGain) return;
+    const cfg   = WORLD_HARMONY.city;
+    const scale = HARM_MODES[cfg.mode];
+    // Pick a scale tone in the mid register
+    const degree = Math.floor(Math.random() * 7);
+    const midi   = 48 + cfg.key + scale[degree] + (Math.random() < 0.3 ? 12 : 0);
+    const freq   = _harmMidiToHz(Math.min(midi, 72));
+    const pan    = (Math.random() - 0.5) * 1.0;
+    const vol    = 0.05 + Math.random() * 0.06;
+    const wave   = Math.random() < 0.6 ? 'triangle' : 'sawtooth';
+    _shadowTone(freq, vol, 0.004, 0.12 + Math.random() * 0.25,
+                Math.max(-1, Math.min(1, pan)), wave);
+    // Faster when more active
+    const delay  = 220 + Math.random() * (800 - VIBE.activity * 400);
+    _cityShadowTimer = setTimeout(tick, delay);
+  };
+  setTimeout(tick, 600);
+}
+
+function stopCityShadow() {
+  clearTimeout(_cityShadowTimer);
+  _cityShadowTimer = null;
 }
 </script>
 </body>
