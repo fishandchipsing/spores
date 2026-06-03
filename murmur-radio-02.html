@@ -1608,10 +1608,16 @@ async function ghostPlay() {
 
 function scheduleGhost() {
   if (!GHOST.active) return;
-  const delay = 18000+Math.random()*45000;
+  // Forest: dense bird layer — much more frequent replays
+  const isForest  = S.world === 'forest';
+  const baseDelay = isForest ? 6000 : 18000;
+  const randRange = isForest ? 12000 : 45000;
+  const delay     = baseDelay + Math.random() * randRange;
   GHOST.loopTimer = setTimeout(async () => {
     await ghostPlay();
-    if (Math.random()<0.3) setTimeout(ghostPlay, rnd(3000,9000));
+    // Forest: high chance of immediate second bird call
+    const burstP = isForest ? 0.65 : 0.3;
+    if (Math.random() < burstP) setTimeout(ghostPlay, rnd(800, isForest ? 4000 : 9000));
     scheduleGhost();
   }, delay);
 }
@@ -1887,8 +1893,27 @@ function playShadow(ev) {
       case 'passing':     _shadowDrift(dir, baseVol*0.8, activity); break;
       default:            _shadowBloom(dir, baseVol, register);
     }
+    // Forest: scatter high plings after every shadow event
+    if (S.world === 'forest') _forestPlings(dir, baseVol * 0.45);
     debugLine('shadow', ev.type + ' · ' + dir);
   }, delay);
+}
+
+// High bell-like tones for forest — bird calls, water drops, rustling pings
+function _forestPlings(dir, vol) {
+  if (!ctx || !shadowGain) return;
+  // Pentatonic high register: A5 C6 D6 E6 G6 A6
+  const pool = [880, 1047, 1175, 1319, 1568, 1760];
+  const n = 1 + Math.floor(Math.random() * 3); // 1-3 plings
+  for (let i = 0; i < n; i++) {
+    const freq  = pool[Math.floor(Math.random() * pool.length)];
+    const delay = i * (180 + Math.random() * 320);
+    const pan   = _panVal(dir) + (Math.random() - 0.5) * 0.5;
+    setTimeout(() => {
+      _shadowTone(freq, vol * (0.8 - i * 0.2), 0.003, 0.6 + Math.random() * 0.8,
+                  Math.max(-1, Math.min(1, pan)), 'sine');
+    }, delay);
+  }
 }
 
 // ── Shadow phrase — rhythmically aligned with the SFX buffer ────────
@@ -2248,7 +2273,7 @@ function startMood(world) {
   _harmPreMix.connect(dryG); dryG.connect(moodGain);
   _harmPreMix.connect(_harmConv); _harmConv.connect(wetG); wetG.connect(moodGain);
 
-  if (instr.drums) startCityDrums();
+  if (instr.drums) { startCityDrums(); startCityBass(); startCityAmbient(); }
 
   // Initial level is set by updateLayerGains called after startEngine
 
@@ -2265,7 +2290,7 @@ function stopMood() {
   clearTimeout(_harmTimer);
   clearTimeout(_melodyPhraseTimer);
   _stopHarmOscs(0.8);
-  stopCityDrums();
+  stopCityDrums(); stopCityBass(); stopCityAmbient();
   if (moodGain)   { moodGain.disconnect();   moodGain = null; }
   if (_harmConv)  { _harmConv.disconnect();  _harmConv = null; }
   _harmPreMix = null; _harmOscs = [];
@@ -2587,7 +2612,7 @@ function initWorld(w){
     VIEW.creatureAngle[a.id] = Math.random() * Math.PI * 2;
     VIEW.wobble[a.id] = 0; VIEW.age[a.id] = 0; VIEW.tailHist[a.id] = [];
   });
-  if(S.running){ startAmbient(w); startShadowBus(); startMood(w); startWeatherLayer(S.weather); startAmbientChord(w); }
+  if(S.running){ startAmbient(w); startShadowBus(); startMood(w); startWeatherLayer(S.weather); }
   document.getElementById('pl-list').innerHTML = '';
   const psl = document.getElementById('ps-list'); if (psl) psl.innerHTML = '';
   if (typeof updatePanelState   === 'function') updatePanelState();
@@ -2804,7 +2829,6 @@ function startEngine(){
   document.getElementById('radio-bars').classList.add('live');
   startAmbient(S.world); startViz(); startGhostLayer(); startShadowBus(); startMood(S.world);
   startWeatherLayer(S.weather);
-  startAmbientChord(S.world);
   S.cdInterval=setInterval(()=>{
     if(!S.running||!S.nextAt) return;
     const rem=Math.max(0,S.nextAt-Date.now());
@@ -2822,7 +2846,7 @@ function stopEngine(){
   S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval); clearTimeout(S.weatherTimeout);
   clearTimeout(S.arc.epochTimer); clearInterval(_epochBarInterval);
   stopAmbient(); stopViz(); stopGhostLayer(); stopShadowBus(); stopMood();
-  stopWeatherLayer(); stopAmbientChord(); stopCityDrums();
+  stopWeatherLayer(); stopCityDrums(); stopCityBass(); stopCityAmbient();
   document.getElementById('countdown').textContent='';
   document.getElementById('start-btn').textContent='▶';
   document.getElementById('start-btn').classList.remove('on');
@@ -3384,7 +3408,7 @@ function updateLayerGains(level) {
   const shT = level < 0.5 ? lerp(0.00, 0.80, level / 0.5) : 0.80;
   const mT  = level < 0.5 ? lerp(0.00, 0.20, level / 0.5) : lerp(0.20, 0.50, (level - 0.5) / 0.5);
   const gT  = sT * 0.45;
-  const aT  = 0.018; // ambient chord: very faint constant
+  const aT  = 0; // ambient chord: disabled
 
   // Update slider positions to show live levels
   const ns  = document.getElementById('mix-noise');
@@ -4184,27 +4208,37 @@ function stopAmbientChord() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// CITY DRUMS — kick + hi-hat pattern for city world
+// CITY RHYTHM — drums (kick/snare/hat) + walking bass + car whooshes
 // ═══════════════════════════════════════════════════════════
 let _drumRunning = false, _drumTimer = null;
+let _bassRunning = false, _bassTimer = null;
+let _cityAmbientTimer = null;
 
 function startCityDrums() {
   if (!ctx || _drumRunning) return;
   _drumRunning = true;
   const scheduleBeat = () => {
     if (!_drumRunning || !_harmRunning) return;
-    const bpm = 85 + VIBE.activity * 35;
-    const beat = 60 / bpm;
-    const now = ctx.currentTime;
-    // 4-beat bar: kick on 1+3, hat on 2+4
-    [0, 1, 2, 3].forEach(b => {
-      const t = now + b * beat;
-      if (b % 2 === 0) _drumKick(t);
-      else             _drumHat(t);
-      // Occasional off-beat hat
-      if (Math.random() < 0.28) _drumHat(t + beat * 0.5);
-    });
-    _drumTimer = setTimeout(scheduleBeat, beat * 4 * 950);
+    const bpm   = 108 + VIBE.activity * 32;  // 108–140
+    const beat  = 60 / bpm;
+    const eighth = beat / 2;
+    const now   = ctx.currentTime;
+    // Schedule 8 eighth-note slots per bar
+    for (let e = 0; e < 8; e++) {
+      const swing = (e % 2 === 1) ? eighth * 0.06 : 0; // subtle swing
+      const t = now + e * eighth + swing;
+      // Hi-hat: every 8th, on-beats slightly louder
+      if (Math.random() < 0.90) _drumHat(t, e % 2 === 0 ? 0.26 : 0.14);
+      // Kick: beat 1 (e=0) always, beat 3 (e=4) usually, occasional anticipation
+      if (e === 0)                         _drumKick(t);
+      if (e === 4 && Math.random()<0.88)   _drumKick(t);
+      if (e === 2 && Math.random()<0.22)   _drumKick(t); // syncopated kick
+      if (e === 6 && Math.random()<0.28)   _drumKick(t); // off-beat kick
+      // Snare: beat 2 (e=2) + beat 4 (e=6) — the backbeat
+      if (e === 2) _drumSnare(t);
+      if (e === 6) _drumSnare(t);
+    }
+    _drumTimer = setTimeout(scheduleBeat, beat * 4 * 960);
   };
   scheduleBeat();
 }
@@ -4219,25 +4253,136 @@ function _drumKick(t) {
   const s = ctx.createBufferSource();
   s.buffer = _mkNoiseBuf(0.28, 'brown');
   const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=110;
-  const env = ctx.createGain(); env.gain.value = 0;
+  const env = ctx.createGain();
   s.connect(lp); lp.connect(env); env.connect(_harmPreMix);
   lp.frequency.setValueAtTime(110, t);
   lp.frequency.exponentialRampToValueAtTime(38, t + 0.09);
-  env.gain.setValueAtTime(0.88, t);
+  env.gain.setValueAtTime(0.75, t);
   env.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
   s.start(t); s.stop(t + 0.38);
 }
 
-function _drumHat(t) {
+function _drumSnare(t) {
   if (!ctx || !_harmPreMix) return;
   const s = ctx.createBufferSource();
-  s.buffer = _mkNoiseBuf(0.05, 'white');
-  const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=7500;
-  const env = ctx.createGain(); env.gain.value = 0;
+  s.buffer = _mkNoiseBuf(0.14, 'white');
+  // Body: mid bandpass
+  const bp  = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=230; bp.Q.value=0.9;
+  // Snap: high crackle
+  const hp  = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=4000; hp.Q.value=0.5;
+  const eB  = ctx.createGain(); const eS = ctx.createGain();
+  s.connect(bp); bp.connect(eB); eB.connect(_harmPreMix);
+  s.connect(hp); hp.connect(eS); eS.connect(_harmPreMix);
+  eB.gain.setValueAtTime(0.48, t); eB.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+  eS.gain.setValueAtTime(0.22, t); eS.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+  s.start(t); s.stop(t + 0.26);
+}
+
+function _drumHat(t, vol = 0.22) {
+  if (!ctx || !_harmPreMix) return;
+  const s = ctx.createBufferSource();
+  s.buffer = _mkNoiseBuf(0.04, 'white');
+  const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=8000;
+  const env = ctx.createGain();
   s.connect(hp); hp.connect(env); env.connect(_harmPreMix);
-  env.gain.setValueAtTime(0.28, t);
-  env.gain.exponentialRampToValueAtTime(0.001, t + 0.042);
-  s.start(t); s.stop(t + 0.08);
+  env.gain.setValueAtTime(vol, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t + 0.032);
+  s.start(t); s.stop(t + 0.06);
+}
+
+// ── Walking bass ────────────────────────────────────────────
+function startCityBass() {
+  if (!ctx || _bassRunning) return;
+  _bassRunning = true;
+  const scheduleBar = () => {
+    if (!_bassRunning || !_harmRunning) return;
+    const bpm  = 108 + VIBE.activity * 32;
+    const beat = 60 / bpm;
+    const now  = ctx.currentTime;
+    const cfg  = WORLD_HARMONY.city;
+    const scale = HARM_MODES[cfg.mode];
+    const root  = 36 + cfg.key; // bass register (MIDI ~46 = Bb2)
+    // Four walking notes — root, scale tones, occasional chromatic approach
+    const walks = [
+      [0, scale[2], scale[4], scale[4] + 1],       // root→3rd→5th→approach
+      [0, scale[4], scale[2], scale[0] + 12],       // root→5th→3rd→octave
+      [0, scale[1], scale[3], scale[4]],            // root→2nd→4th→5th
+      [0, scale[4], scale[5], scale[4] - 1],        // root→5th→6th→below-5th
+    ];
+    const walk = walks[Math.floor(Math.random() * walks.length)];
+    for (let b = 0; b < 4; b++) {
+      const t    = now + b * beat;
+      let midi   = root + (walk[b] || 0);
+      if (midi > 52) midi -= 12; // keep it low
+      _bassNote(midi, t, beat * 0.82);
+    }
+    _bassTimer = setTimeout(scheduleBar, beat * 4 * 960);
+  };
+  scheduleBar();
+}
+
+function stopCityBass() {
+  _bassRunning = false;
+  clearTimeout(_bassTimer);
+}
+
+function _bassNote(midi, t, dur) {
+  if (!ctx || !_harmPreMix) return;
+  const freq = _harmMidiToHz(midi);
+  const osc  = ctx.createOscillator();
+  osc.type = 'triangle'; osc.frequency.value = freq;
+  const env  = ctx.createGain();
+  osc.connect(env); env.connect(_harmPreMix);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.30, t + 0.014);
+  env.gain.setTargetAtTime(0.22, t + 0.04, 0.12);
+  env.gain.setTargetAtTime(0, t + dur * 0.72, 0.06);
+  osc.start(t); osc.stop(t + dur + 0.12);
+}
+
+// ── Car whooshes — background city ambient ──────────────────
+function startCityAmbient() {
+  const scheduleWhoosh = () => {
+    if (S.world !== 'city' || !S.running || !ctx) return;
+    const delay = 3500 + Math.random() * 9000;
+    _cityAmbientTimer = setTimeout(() => {
+      _carWhoosh();
+      scheduleWhoosh();
+    }, delay);
+  };
+  scheduleWhoosh();
+}
+
+function stopCityAmbient() {
+  clearTimeout(_cityAmbientTimer);
+  _cityAmbientTimer = null;
+}
+
+function _carWhoosh() {
+  if (!ctx || !ghostMasterGain) return;
+  const fromLeft  = Math.random() < 0.5;
+  const dur       = 1.0 + Math.random() * 0.8;
+  const now       = ctx.currentTime;
+  const s         = ctx.createBufferSource();
+  s.buffer        = _mkNoiseBuf(dur + 0.3, 'pink');
+
+  // Bandpass: road noise character — sweeps as car passes (Doppler feel)
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(fromLeft ? 550 : 1400, now);
+  bp.frequency.linearRampToValueAtTime(fromLeft ? 1400 : 550, now + dur);
+
+  const pan = ctx.createStereoPanner();
+  pan.pan.setValueAtTime(fromLeft ? -1.0 : 1.0, now);
+  pan.pan.linearRampToValueAtTime(fromLeft ?  1.0 : -1.0, now + dur);
+
+  const env = ctx.createGain();
+  s.connect(bp); bp.connect(env); env.connect(pan); pan.connect(ghostMasterGain);
+
+  const peakVol = 0.12 + Math.random() * 0.10;
+  env.gain.setValueAtTime(0, now);
+  env.gain.linearRampToValueAtTime(peakVol, now + dur * 0.35);
+  env.gain.setTargetAtTime(0, now + dur * 0.55, 0.18);
+  s.start(now); s.stop(now + dur + 0.4);
 }
 
 // ═══════════════════════════════════════════════════════════
