@@ -2273,7 +2273,12 @@ function startMood(world) {
   _harmPreMix.connect(dryG); dryG.connect(moodGain);
   _harmPreMix.connect(_harmConv); _harmConv.connect(wetG); wetG.connect(moodGain);
 
-  if (instr.drums) { startCityDrums(); startCityBass(); startCityAmbient(); }
+  if (instr.drums) {
+    // Separate dry bus for percussion — bypasses reverb so kicks stay punchy
+    _drumBus = ctx.createGain(); _drumBus.gain.value = 1.0;
+    _drumBus.connect(moodGain);
+    startCityDrums(); startCityBass(); startCityAmbient();
+  }
 
   // Initial level is set by updateLayerGains called after startEngine
 
@@ -2293,6 +2298,7 @@ function stopMood() {
   stopCityDrums(); stopCityBass(); stopCityAmbient();
   if (moodGain)   { moodGain.disconnect();   moodGain = null; }
   if (_harmConv)  { _harmConv.disconnect();  _harmConv = null; }
+  if (_drumBus)   { _drumBus.disconnect();   _drumBus = null; }
   _harmPreMix = null; _harmOscs = [];
 }
 
@@ -4212,6 +4218,7 @@ function stopAmbientChord() {
 // ═══════════════════════════════════════════════════════════
 let _drumRunning = false, _drumTimer = null;
 let _bassRunning = false, _bassTimer = null;
+let _drumBus = null; // dry bus — bypasses vibraphone reverb so drums stay punchy
 let _cityAmbientTimer = null;
 
 function startCityDrums() {
@@ -4249,42 +4256,40 @@ function stopCityDrums() {
 }
 
 function _drumKick(t) {
-  if (!ctx || !_harmPreMix) return;
+  if (!ctx || !_drumBus) return;
   const s = ctx.createBufferSource();
   s.buffer = _mkNoiseBuf(0.28, 'brown');
   const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=110;
   const env = ctx.createGain();
-  s.connect(lp); lp.connect(env); env.connect(_harmPreMix);
+  s.connect(lp); lp.connect(env); env.connect(_drumBus);
   lp.frequency.setValueAtTime(110, t);
   lp.frequency.exponentialRampToValueAtTime(38, t + 0.09);
-  env.gain.setValueAtTime(0.75, t);
+  env.gain.setValueAtTime(1.1, t);
   env.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
   s.start(t); s.stop(t + 0.38);
 }
 
 function _drumSnare(t) {
-  if (!ctx || !_harmPreMix) return;
+  if (!ctx || !_drumBus) return;
   const s = ctx.createBufferSource();
   s.buffer = _mkNoiseBuf(0.14, 'white');
-  // Body: mid bandpass
   const bp  = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=230; bp.Q.value=0.9;
-  // Snap: high crackle
   const hp  = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=4000; hp.Q.value=0.5;
   const eB  = ctx.createGain(); const eS = ctx.createGain();
-  s.connect(bp); bp.connect(eB); eB.connect(_harmPreMix);
-  s.connect(hp); hp.connect(eS); eS.connect(_harmPreMix);
-  eB.gain.setValueAtTime(0.48, t); eB.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
-  eS.gain.setValueAtTime(0.22, t); eS.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+  s.connect(bp); bp.connect(eB); eB.connect(_drumBus);
+  s.connect(hp); hp.connect(eS); eS.connect(_drumBus);
+  eB.gain.setValueAtTime(0.70, t); eB.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+  eS.gain.setValueAtTime(0.38, t); eS.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
   s.start(t); s.stop(t + 0.26);
 }
 
 function _drumHat(t, vol = 0.22) {
-  if (!ctx || !_harmPreMix) return;
+  if (!ctx || !_drumBus) return;
   const s = ctx.createBufferSource();
   s.buffer = _mkNoiseBuf(0.04, 'white');
   const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=8000;
   const env = ctx.createGain();
-  s.connect(hp); hp.connect(env); env.connect(_harmPreMix);
+  s.connect(hp); hp.connect(env); env.connect(_drumBus);
   env.gain.setValueAtTime(vol, t);
   env.gain.exponentialRampToValueAtTime(0.001, t + 0.032);
   s.start(t); s.stop(t + 0.06);
@@ -4327,15 +4332,16 @@ function stopCityBass() {
 }
 
 function _bassNote(midi, t, dur) {
-  if (!ctx || !_harmPreMix) return;
+  if (!ctx || !_drumBus) return;
   const freq = _harmMidiToHz(midi);
   const osc  = ctx.createOscillator();
   osc.type = 'triangle'; osc.frequency.value = freq;
+  const lp  = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
   const env  = ctx.createGain();
-  osc.connect(env); env.connect(_harmPreMix);
+  osc.connect(lp); lp.connect(env); env.connect(_drumBus);
   env.gain.setValueAtTime(0, t);
-  env.gain.linearRampToValueAtTime(0.30, t + 0.014);
-  env.gain.setTargetAtTime(0.22, t + 0.04, 0.12);
+  env.gain.linearRampToValueAtTime(0.45, t + 0.014);
+  env.gain.setTargetAtTime(0.35, t + 0.04, 0.12);
   env.gain.setTargetAtTime(0, t + dur * 0.72, 0.06);
   osc.start(t); osc.stop(t + dur + 0.12);
 }
