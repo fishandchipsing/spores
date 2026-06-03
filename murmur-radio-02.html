@@ -558,6 +558,27 @@
     font-size: 8px; color: var(--p-text); min-width: 26px; text-align: right;
   }
 
+  /* ── Bottom utility bar ─────────────────────────────────── */
+  #bottom-bar {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px; z-index: 80;
+  }
+  .bottom-btn {
+    background: none; border: 1px solid var(--muted); color: var(--muted);
+    font-family: inherit; font-size: 9px; font-weight: 300;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 5px 12px; cursor: pointer; border-radius: 2px;
+    transition: color 0.3s, border-color 0.3s;
+  }
+  .bottom-btn:hover { color: var(--text); border-color: var(--text); }
+  .bottom-btn.recording {
+    color: #c04040; border-color: #c04040; animation: rec-pulse 1.2s infinite;
+  }
+  .bottom-btn.saved { color: var(--accent); border-color: var(--accent); }
+  @keyframes rec-pulse {
+    0%,100% { opacity: 1; } 50% { opacity: 0.45; }
+  }
+
   /* ═══════════════════════════════════════════════════════════
      MOBILE  (≤ 640 px — phone portrait / small tablet)
      Simplified player — no side panel, no mix sliders, vertical
@@ -4530,6 +4551,98 @@ function stopCityShadow() {
   clearTimeout(_cityShadowTimer);
   _cityShadowTimer = null;
 }
+// ═══════════════════════════════════════════════════════════
+// PRESET — save/load layerLevel + mixer sliders to localStorage
+// ═══════════════════════════════════════════════════════════
+const PRESET_KEY = 'murmur02_preset';
+const PRESET_SLIDERS = ['mix-noise','mix-weather','mix-sfx','mix-shadow',
+                        'mix-mood','mix-ambient','ghost-slider'];
+
+function savePreset() {
+  const preset = { layerLevel, sliders: {} };
+  PRESET_SLIDERS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) preset.sliders[id] = parseFloat(el.value);
+  });
+  localStorage.setItem(PRESET_KEY, JSON.stringify(preset));
+  const btn = document.getElementById('btn-preset');
+  if (btn) {
+    btn.textContent = 'saved ✓';
+    btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'save preset'; btn.classList.remove('saved'); }, 1800);
+  }
+}
+
+function loadPreset() {
+  try {
+    const raw = localStorage.getItem(PRESET_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (p.layerLevel != null) {
+      layerLevel = p.layerLevel;
+      // Don't call updateLayerGains yet — audio context may not exist
+    }
+    Object.entries(p.sliders || {}).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    });
+  } catch(e) {}
+}
+loadPreset(); // run immediately on parse so sliders have values before engine starts
+
+// ═══════════════════════════════════════════════════════════
+// RECORDER — MediaStreamDestinationNode → MediaRecorder → download
+// ═══════════════════════════════════════════════════════════
+let _recorder = null;
+let _recChunks = [];
+let _recDest   = null;
+
+function toggleRecording() {
+  if (_recorder && _recorder.state !== 'inactive') {
+    _recorder.stop();
+    return;
+  }
+  if (!ctx || !masterGain) {
+    alert('Start the player first, then hit record.');
+    return;
+  }
+
+  _recDest = ctx.createMediaStreamDestination();
+  masterGain.connect(_recDest);
+  _recChunks = [];
+
+  const mime = ['audio/webm;codecs=opus','audio/webm','audio/ogg']
+    .find(t => MediaRecorder.isTypeSupported(t)) || '';
+
+  _recorder = new MediaRecorder(_recDest.stream, mime ? { mimeType: mime } : {});
+  _recorder.ondataavailable = e => { if (e.data.size > 0) _recChunks.push(e.data); };
+  _recorder.onstop = () => {
+    masterGain.disconnect(_recDest);
+    const blob = new Blob(_recChunks, { type: _recorder.mimeType });
+    const ext  = _recorder.mimeType.includes('ogg') ? 'ogg' : 'webm';
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `murmur-${S.world || 'session'}-${Date.now()}.${ext}`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    _recorder = null; _recDest = null; _recChunks = [];
+    const btn = document.getElementById('btn-record');
+    if (btn) { btn.textContent = '⏺ record'; btn.classList.remove('recording'); }
+  };
+
+  _recorder.start(1000);
+  const btn = document.getElementById('btn-record');
+  if (btn) { btn.textContent = '⏹ stop'; btn.classList.add('recording'); }
+}
+
+document.getElementById('btn-preset').addEventListener('click', savePreset);
+document.getElementById('btn-record').addEventListener('click', toggleRecording);
 </script>
+
+<div id="bottom-bar">
+  <button class="bottom-btn" id="btn-preset">save preset</button>
+  <button class="bottom-btn" id="btn-record">⏺ record</button>
+</div>
+
 </body>
 </html>
