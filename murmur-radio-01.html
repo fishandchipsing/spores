@@ -841,8 +841,8 @@
 </div>
 
 <!-- ── Chord / Harmony panel (left) ─────────────────────── -->
-<button id="chord-panel-toggle" class="closed">▸</button>
-<div id="chord-panel" class="closed">
+<button id="chord-panel-toggle">◂</button>
+<div id="chord-panel">
 
   <div class="panel-section">
     <div class="panel-head">harmony</div>
@@ -3635,11 +3635,11 @@ function buildChordPanel() {
   const panel  = document.getElementById('chord-panel');
   if (toggle && panel) {
     toggle.addEventListener('click', () => {
-      const opening = panel.classList.contains('closed');
-      panel.classList.toggle('closed');
-      toggle.classList.toggle('closed');
-      toggle.textContent = opening ? '◂' : '▸';
-      if (opening) updateChordPanel(); // refresh on open
+      const isOpen = !panel.classList.contains('closed');
+      panel.classList.toggle('closed', isOpen);
+      toggle.classList.toggle('closed', isOpen);
+      toggle.textContent = isOpen ? '▸' : '◂';
+      if (!isOpen) updateChordPanel(); // refresh on open
     });
   }
 
