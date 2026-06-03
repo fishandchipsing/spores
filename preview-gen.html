@@ -81,11 +81,11 @@
 
 // ── World audio profiles ──────────────────────────────────────────────────────
 const CFG = {
-  water:  { color:'brown', rumble:60,  shimmer:800,  lfoRate:0.08, lfoDepth:0.12, noiseVol:0.28,
+  water:  { color:'brown', rumble:60,  shimmer:800,  lfoRate:0.08, lfoDepth:0.12, noiseVol:0.10,
             scale:[0,2,4,6,7,9,11], key:2,  wave:'sine',     atk:0.55, sustTC:5.5, maxMidi:79 },
-  forest: { color:'brown', rumble:120, shimmer:2200, lfoRate:0.05, lfoDepth:0.12, noiseVol:0.28,
+  forest: { color:'brown', rumble:120, shimmer:2200, lfoRate:0.05, lfoDepth:0.12, noiseVol:0.10,
             scale:[0,2,4,5,7,9,10], key:9,  wave:'sine',     atk:0.18, sustTC:4.0, maxMidi:74 },
-  city:   { color:'pink',  rumble:400, shimmer:1200, lfoRate:0.12, lfoDepth:0.10, noiseVol:0.22,
+  city:   { color:'pink',  rumble:400, shimmer:1200, lfoRate:0.12, lfoDepth:0.10, noiseVol:0.10,
             scale:[0,1,3,5,7,8,10], key:10, wave:'triangle', atk:0.006,sustTC:2.2, maxMidi:72,
             tremolo:{ rate:5.5, depth:0.14 } },
 };
@@ -93,38 +93,38 @@ const CFG = {
 // ── Curated 20-second story timelines ────────────────────────────────────────
 const TL = {
   water: [
-    { t:2.0,  type:'sfx',    i:0, pan:-0.65, vol:0.50, label:'ripple stirs'    },
+    { t:2.0,  type:'sfx',    i:0, pan:-0.65, vol:0.80, label:'ripple stirs'    },
     { t:3.8,  type:'shadow', label:'resonance settles'  },
     { t:5.5,  type:'melody', n:3,             label:'water phrase'     },
-    { t:8.2,  type:'sfx',    i:1, pan:0.55,  vol:0.45, label:'distant call'    },
+    { t:8.2,  type:'sfx',    i:1, pan:0.55,  vol:0.72, label:'distant call'    },
     { t:9.8,  type:'shadow', label:'after-tone'         },
     { t:11.5, type:'melody', n:4,             label:'melody deepens'   },
-    { t:13.8, type:'sfx',    i:2, pan:-0.3,  vol:0.38, label:'soft lapping'    },
+    { t:13.8, type:'sfx',    i:2, pan:-0.3,  vol:0.62, label:'soft lapping'    },
     { t:16.0, type:'melody', n:2,             label:'last phrase'      },
     { t:17.5, type:'shadow', label:'long decay'         },
   ],
   forest: [
     { t:1.5,  type:'plings', label:'birds scatter'      },
-    { t:3.0,  type:'sfx',    i:0, pan:-0.55, vol:0.50, label:'branch snap'     },
+    { t:3.0,  type:'sfx',    i:0, pan:-0.55, vol:0.80, label:'branch snap'     },
     { t:5.2,  type:'melody', n:3,             label:'forest melody'    },
     { t:7.5,  type:'plings', label:'plings shimmer'     },
-    { t:9.0,  type:'sfx',    i:1, pan:0.60,  vol:0.45, label:'insect hum'      },
+    { t:9.0,  type:'sfx',    i:1, pan:0.60,  vol:0.72, label:'insect hum'      },
     { t:11.0, type:'shadow', label:'bloom'              },
     { t:12.8, type:'melody', n:4,             label:'melody drifts'    },
     { t:14.2, type:'plings', label:'high scatter'       },
-    { t:15.8, type:'sfx',    i:2, pan:-0.4,  vol:0.38, label:'leaf drip'       },
+    { t:15.8, type:'sfx',    i:2, pan:-0.4,  vol:0.62, label:'leaf drip'       },
     { t:17.5, type:'shadow', label:'long decay'         },
   ],
   city: [
     { t:0.8,  type:'car',    label:'car passes'         },
-    { t:2.5,  type:'sfx',    i:0, pan:-0.4,  vol:0.50, label:'street sound'    },
+    { t:2.5,  type:'sfx',    i:0, pan:-0.4,  vol:0.80, label:'street sound'    },
     { t:5.0,  type:'melody', n:3,             label:'city phrase'      },
     { t:7.5,  type:'car',    label:'car passes'         },
-    { t:9.2,  type:'sfx',    i:1, pan:0.50,  vol:0.45, label:'city sound'      },
+    { t:9.2,  type:'sfx',    i:1, pan:0.50,  vol:0.72, label:'city sound'      },
     { t:11.2, type:'shadow', label:'city echo'          },
     { t:12.8, type:'melody', n:3,             label:'melody returns'   },
     { t:14.8, type:'car',    label:'car passes'         },
-    { t:16.0, type:'sfx',    i:2, pan:-0.3,  vol:0.38, label:'ambient sound'   },
+    { t:16.0, type:'sfx',    i:2, pan:-0.3,  vol:0.62, label:'ambient sound'   },
     { t:17.5, type:'shadow', label:'city residue'       },
   ],
 };
@@ -219,7 +219,7 @@ function playMelody(world, n) {
     midi = Math.min(midi, c.maxMidi);
     const step = c.wave === 'triangle' ? 0.25 : 0.52;
     const t    = now + i * step * (0.8 + Math.random() * 0.4);
-    playTone(midiHz(midi), 0.09 + Math.random()*0.05,
+    playTone(midiHz(midi), 0.16 + Math.random()*0.06,
              (Math.random()-0.5)*0.5, c.atk, c.sustTC, c.wave, t, c.tremolo ?? null);
   }
 }
@@ -250,7 +250,7 @@ function playPlings() {
     const env  = ctx.createGain();
     const pn   = ctx.createStereoPanner(); pn.pan.value = (Math.random()-0.5)*0.9;
     osc.connect(env); env.connect(pn); pn.connect(masterGain);
-    const vol = 0.065 + Math.random() * 0.04;
+    const vol = 0.12 + Math.random() * 0.06;
     env.gain.setValueAtTime(0, t);
     env.gain.linearRampToValueAtTime(vol, t + 0.008);
     env.gain.setTargetAtTime(0, t + 0.015, 0.42 + Math.random() * 0.55);
