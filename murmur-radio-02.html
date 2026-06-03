@@ -4337,8 +4337,6 @@ function _trafficIntensity() {
   return Math.max(0, Math.min(1, 0.45 + a + b + c));
 }
 
-let _cityAmbientTimer = null;
-
 function startCityAmbient() {
   const schedule = () => {
     if (S.world !== 'city' || !S.running || !ctx) return;
