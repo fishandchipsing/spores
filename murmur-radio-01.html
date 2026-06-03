@@ -466,6 +466,98 @@
   }
   .se-text.filename { color: var(--p-mid); font-style: italic; }
 
+  /* ── Chord / Harmony panel (left) ──────────────────────── */
+  #chord-panel-toggle {
+    position: fixed; top: 50%; left: 260px;
+    transform: translateY(-50%);
+    width: 18px; height: 44px;
+    background: #0f0f0d; border: 1px solid #1e1e1a; border-left: none;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer; z-index: 201;
+    color: var(--muted); font-size: 8px; font-family: inherit;
+    display: flex; align-items: center; justify-content: center;
+    transition: left 0.3s ease, color 0.2s;
+  }
+  #chord-panel-toggle:hover { color: var(--accent); }
+  #chord-panel-toggle.closed { left: 0; }
+
+  #chord-panel {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: 260px;
+    background: #111110;
+    border-right: 1px solid #252520;
+    display: flex; flex-direction: column;
+    z-index: 200;
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+    overflow-y: auto; overflow-x: hidden;
+    --p-dim: #4e4e46; --p-mid: #7e7e72; --p-text: #b8b8a8;
+    --p-bright: #deded0; --p-accent: #c8c8b0; --p-sep: #1e1e1c;
+  }
+  #chord-panel::-webkit-scrollbar { width: 2px; }
+  #chord-panel::-webkit-scrollbar-thumb { background: #3a3a32; }
+  #chord-panel.closed { transform: translateX(-260px); }
+
+  /* chord display at top */
+  .cp-chord-big {
+    font-size: 18px; color: var(--p-bright); letter-spacing: 0.02em;
+    font-weight: 400; margin-bottom: 3px; line-height: 1;
+  }
+  .cp-notes-line {
+    font-size: 9px; color: var(--p-dim); letter-spacing: 0.14em;
+    min-height: 14px;
+  }
+
+  /* small button — key/mode/oct/colour/degree */
+  .cp-btn {
+    background: none;
+    border: 1px solid var(--p-sep); color: var(--p-dim);
+    font-family: 'IBM Plex Mono', monospace; font-size: 8px;
+    font-weight: 300; letter-spacing: 0.07em;
+    padding: 3px 2px; border-radius: 3px;
+    cursor: pointer; text-align: center; white-space: nowrap;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .cp-btn:hover  { color: var(--p-text);   border-color: var(--p-mid); }
+  .cp-btn.active { background: #1e1e1a; color: var(--p-accent); border-color: var(--p-text); }
+
+  /* key grid: 4 col × 3 row */
+  .cp-key-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+  }
+
+  /* generic flex row of equal buttons */
+  .cp-btn-row { display: flex; gap: 4px; }
+  .cp-btn-row .cp-btn { flex: 1; }
+
+  /* 7 scale degree buttons */
+  .cp-deg-row {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+  }
+  .cp-deg-row .cp-btn { padding: 4px 2px; font-size: 7.5px; }
+
+  /* vibe + speed sliders */
+  .cp-slider-row {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
+  }
+  .cp-slider-row:last-child { margin-bottom: 0; }
+  .cp-slabel {
+    font-size: 8px; color: var(--p-mid); min-width: 46px;
+    letter-spacing: 0.06em;
+  }
+  .cp-slider {
+    -webkit-appearance: none; appearance: none;
+    flex: 1; height: 2px; background: #252520;
+    outline: none; border: none; cursor: pointer; border-radius: 1px;
+  }
+  .cp-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--p-text); cursor: pointer;
+  }
+  .cp-sval {
+    font-size: 8px; color: var(--p-text); min-width: 26px; text-align: right;
+  }
+
   /* ═══════════════════════════════════════════════════════════
      MOBILE  (≤ 640 px — phone portrait / small tablet)
      Simplified player — no side panel, no mix sliders, vertical
@@ -476,6 +568,8 @@
     #debug-overlay,
     #side-panel,
     #panel-toggle,
+    #chord-panel,
+    #chord-panel-toggle,
     #secondary,
     #settings-toggle,
     #mix,
@@ -742,6 +836,71 @@
   <div class="panel-section" id="panel-log" style="flex:1; overflow-y:auto; min-height:0; border-bottom:none;">
     <div class="panel-head" style="padding: 0; margin-bottom:0;">log</div>
     <div id="pl-list"></div>
+  </div>
+
+</div>
+
+<!-- ── Chord / Harmony panel (left) ─────────────────────── -->
+<button id="chord-panel-toggle" class="closed">▸</button>
+<div id="chord-panel" class="closed">
+
+  <div class="panel-section">
+    <div class="panel-head">harmony</div>
+    <div class="cp-chord-big" id="cp-chord">—</div>
+    <div class="cp-notes-line" id="cp-notes">—</div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-head">key</div>
+    <div class="cp-key-grid" id="cp-keys"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-head">mode</div>
+    <div class="cp-btn-row" id="cp-modes"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-head">octave</div>
+    <div class="cp-btn-row" id="cp-octs"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-head">colour</div>
+    <div class="cp-btn-row" id="cp-colours"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-head">scale degrees</div>
+    <div class="cp-deg-row" id="cp-degrees"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="panel-head">vibe</div>
+    <div class="cp-slider-row">
+      <span class="cp-slabel">activity</span>
+      <input type="range" id="cp-activity" class="cp-slider" min="0" max="1" step="0.01" value="0.30">
+      <span class="cp-sval" id="cp-activity-val">0.30</span>
+    </div>
+    <div class="cp-slider-row">
+      <span class="cp-slabel">tension</span>
+      <input type="range" id="cp-tension" class="cp-slider" min="0" max="1" step="0.01" value="0.20">
+      <span class="cp-sval" id="cp-tension-val">0.20</span>
+    </div>
+    <div class="cp-slider-row">
+      <span class="cp-slabel">register</span>
+      <input type="range" id="cp-register" class="cp-slider" min="0" max="1" step="0.01" value="0.50">
+      <span class="cp-sval" id="cp-register-val">0.50</span>
+    </div>
+  </div>
+
+  <div class="panel-section" style="border-bottom:none">
+    <div class="panel-head">chord speed</div>
+    <div class="cp-slider-row">
+      <span class="cp-slabel">slow</span>
+      <input type="range" id="cp-speed" class="cp-slider" min="0.2" max="4" step="0.1" value="1">
+      <span class="cp-slabel" style="min-width:26px;text-align:right">fast</span>
+    </div>
   </div>
 
 </div>
@@ -1772,10 +1931,13 @@ let _harmConv    = null; // reverb convolver
 let _harmTimer   = null; // slow chord change timer
 let _harmCurrent = 0;    // current chord degree
 let _harmRunning = false;
+let _harmColourOverride = null; // null=auto, or 'triad'|'7th'|'9th'|'sus4'
+let _harmSpeedMult = 1.0;       // chord change speed multiplier
 
 function _harmMidiToHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
 function _harmColour() {
+  if (_harmColourOverride) return _harmColourOverride;
   if (VIBE.tension < 0.30) return 'triad';
   if (VIBE.tension < 0.55) return '7th';
   if (VIBE.tension < 0.78) return '9th';
@@ -1853,13 +2015,14 @@ function _playHarmChord(degree) {
   const scale = HARM_MODES[cfg.mode];
   const rootN = HARM_NOTE_NAMES[(cfg.key + scale[degree % 7]) % 12];
   debugLine('mood', `${rootN} ${_harmColour()}`);
+  updateChordPanel();
 }
 
 function _scheduleNextChord() {
   clearTimeout(_harmTimer);
   if (!_harmRunning) return;
-  // Slow harmonic rhythm: 18-45s, shorter when more active
-  const delay = (18 + (1 - VIBE.activity) * 27 + Math.random() * 10) * 1000;
+  // Slow harmonic rhythm: 18-45s, shorter when more active; speed knob scales it
+  const delay = (18 + (1 - VIBE.activity) * 27 + Math.random() * 10) * 1000 / _harmSpeedMult;
   _harmTimer = setTimeout(() => {
     if (!_harmRunning) return;
     const cfg  = WORLD_HARMONY[S.world] || WORLD_HARMONY.water;
@@ -1916,6 +2079,7 @@ function stopMood() {
 function updateMoodVibe() {
   if (!_harmRunning || !ctx || !moodGain) return;
   debugLine('mood', `${HARM_NOTE_NAMES[(WORLD_HARMONY[S.world]?.key||0)]} ${_harmColour()} · ten=${VIBE.tension.toFixed(2)}`);
+  updateChordPanel();
 }
 
 // Called after each world event — steers the chord based on event type
@@ -2236,6 +2400,7 @@ function initWorld(w){
   if (typeof updatePanelAgents  === 'function') updatePanelAgents();
   if (typeof updateCacheCount   === 'function') updateCacheCount();
   if (typeof updatePanelArc     === 'function') updatePanelArc();
+  updateChordPanel();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3066,6 +3231,7 @@ function updateLayerGains(level) {
 // ═══════════════════════════════════════════════════════════
 initWorld('water');
 drawKnob();
+buildChordPanel();
 
 document.querySelectorAll('.world-btn').forEach(btn=>
   btn.addEventListener('click',()=>{ if(S.running) stopEngine(); initWorld(btn.dataset.world); })
@@ -3340,6 +3506,191 @@ ghostFetch = async function() {
 updatePanelState();
 updatePanelAgents();
 ghostFetch(); // populate cache count on load
+
+// ═══════════════════════════════════════════════════════════
+// CHORD PANEL — left-side harmony controls
+// ═══════════════════════════════════════════════════════════
+const ROMAN = ['I','II','III','IV','V','VI','VII'];
+
+function _chordDisplayName(degree) {
+  const cfg   = WORLD_HARMONY[S.world] || WORLD_HARMONY.water;
+  const scale = HARM_MODES[cfg.mode];
+  const root  = HARM_NOTE_NAMES[(cfg.key + scale[degree % 7]) % 12];
+  const qual  = HARM_QUALITY[cfg.mode][degree % 7];
+  const col   = _harmColour();
+  let suffix;
+  if (qual === 'maj') {
+    suffix = col === 'triad' ? '' : col === '7th' ? 'M7' : col === '9th' ? 'M9' : 'sus4';
+  } else if (qual === 'min') {
+    suffix = col === 'triad' ? 'm' : col === '7th' ? 'm7' : col === '9th' ? 'm9' : 'sus4';
+  } else { // dim
+    suffix = col === 'triad' ? '°' : 'ø7';
+  }
+  return root + suffix;
+}
+
+function _midiToNoteName(m) { return HARM_NOTE_NAMES[m % 12]; }
+
+function buildChordPanel() {
+  // ── Key buttons (C … B) ──────────────────────────────────
+  const keysEl = document.getElementById('cp-keys');
+  if (keysEl) {
+    keysEl.innerHTML = '';
+    HARM_NOTE_NAMES.forEach((name, idx) => {
+      const b = document.createElement('button');
+      b.className = 'cp-btn'; b.dataset.key = idx; b.textContent = name;
+      b.addEventListener('click', () => {
+        WORLD_HARMONY[S.world].key = idx;
+        if (_harmRunning) { _playHarmChord(_harmCurrent); _scheduleNextChord(); }
+        updateChordPanel();
+      });
+      keysEl.appendChild(b);
+    });
+  }
+
+  // ── Mode buttons ─────────────────────────────────────────
+  const modesEl = document.getElementById('cp-modes');
+  if (modesEl) {
+    modesEl.innerHTML = '';
+    ['major','minor','dorian'].forEach(mode => {
+      const b = document.createElement('button');
+      b.className = 'cp-btn'; b.dataset.mode = mode; b.textContent = mode;
+      b.addEventListener('click', () => {
+        WORLD_HARMONY[S.world].mode = mode;
+        if (_harmRunning) { _playHarmChord(_harmCurrent); _scheduleNextChord(); }
+        updateChordPanel();
+      });
+      modesEl.appendChild(b);
+    });
+  }
+
+  // ── Octave buttons ───────────────────────────────────────
+  const octsEl = document.getElementById('cp-octs');
+  if (octsEl) {
+    octsEl.innerHTML = '';
+    [2, 3, 4].forEach(oct => {
+      const b = document.createElement('button');
+      b.className = 'cp-btn'; b.dataset.oct = oct; b.textContent = oct;
+      b.addEventListener('click', () => {
+        WORLD_HARMONY[S.world].baseOct = oct;
+        if (_harmRunning) { _playHarmChord(_harmCurrent); _scheduleNextChord(); }
+        updateChordPanel();
+      });
+      octsEl.appendChild(b);
+    });
+  }
+
+  // ── Colour override buttons ──────────────────────────────
+  const coloursEl = document.getElementById('cp-colours');
+  if (coloursEl) {
+    coloursEl.innerHTML = '';
+    ['auto','triad','7th','9th','sus4'].forEach(col => {
+      const b = document.createElement('button');
+      b.className = 'cp-btn'; b.dataset.colour = col; b.textContent = col;
+      b.addEventListener('click', () => {
+        _harmColourOverride = col === 'auto' ? null : col;
+        if (_harmRunning) {
+          _stopHarmOscs(0.4);
+          setTimeout(() => { if (_harmRunning) _playHarmChord(_harmCurrent); }, 450);
+        }
+        updateChordPanel();
+      });
+      coloursEl.appendChild(b);
+    });
+  }
+
+  // ── Scale degree buttons (I–VII) ─────────────────────────
+  const degsEl = document.getElementById('cp-degrees');
+  if (degsEl) {
+    degsEl.innerHTML = '';
+    for (let d = 0; d < 7; d++) {
+      const b = document.createElement('button');
+      b.className = 'cp-btn'; b.dataset.deg = d;
+      b.addEventListener('click', () => {
+        if (_harmRunning) { _playHarmChord(d); _scheduleNextChord(); }
+        updateChordPanel();
+      });
+      degsEl.appendChild(b);
+    }
+  }
+
+  // ── Vibe sliders ─────────────────────────────────────────
+  ['activity','tension','register'].forEach(key => {
+    const slider = document.getElementById('cp-' + key);
+    const valEl  = document.getElementById('cp-' + key + '-val');
+    if (!slider) return;
+    slider.addEventListener('input', () => {
+      VIBE[key] = parseFloat(slider.value);
+      if (valEl) valEl.textContent = VIBE[key].toFixed(2);
+      updateMoodVibe();
+    });
+  });
+
+  // ── Speed slider ─────────────────────────────────────────
+  const spd = document.getElementById('cp-speed');
+  if (spd) spd.addEventListener('input', () => { _harmSpeedMult = parseFloat(spd.value); });
+
+  // ── Panel toggle ─────────────────────────────────────────
+  const toggle = document.getElementById('chord-panel-toggle');
+  const panel  = document.getElementById('chord-panel');
+  if (toggle && panel) {
+    toggle.addEventListener('click', () => {
+      const opening = panel.classList.contains('closed');
+      panel.classList.toggle('closed');
+      toggle.classList.toggle('closed');
+      toggle.textContent = opening ? '◂' : '▸';
+      if (opening) updateChordPanel(); // refresh on open
+    });
+  }
+
+  updateChordPanel();
+}
+
+function updateChordPanel() {
+  const cfg = WORLD_HARMONY[S.world] || WORLD_HARMONY.water;
+
+  // Current chord name + notes
+  const chordEl = document.getElementById('cp-chord');
+  const notesEl = document.getElementById('cp-notes');
+  if (chordEl) chordEl.textContent = _harmRunning ? _chordDisplayName(_harmCurrent) : '—';
+  if (notesEl) {
+    notesEl.textContent = _harmRunning
+      ? _getHarmMidis(_harmCurrent).map(_midiToNoteName).join('  ')
+      : '—';
+  }
+
+  // Highlight active key
+  document.querySelectorAll('#cp-keys .cp-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.key) === cfg.key));
+
+  // Highlight active mode
+  document.querySelectorAll('#cp-modes .cp-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === cfg.mode));
+
+  // Highlight active octave
+  document.querySelectorAll('#cp-octs .cp-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.oct) === cfg.baseOct));
+
+  // Highlight active colour (or 'auto')
+  const activeCol = _harmColourOverride ?? 'auto';
+  document.querySelectorAll('#cp-colours .cp-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.colour === activeCol));
+
+  // Update degree button labels and highlight current
+  document.querySelectorAll('#cp-degrees .cp-btn').forEach(b => {
+    const deg = parseInt(b.dataset.deg);
+    b.textContent = _chordDisplayName(deg);
+    b.classList.toggle('active', deg === _harmCurrent && _harmRunning);
+  });
+
+  // Vibe sliders — keep in sync when world events move VIBE
+  ['activity','tension','register'].forEach(key => {
+    const slider = document.getElementById('cp-' + key);
+    const valEl  = document.getElementById('cp-' + key + '-val');
+    if (slider) slider.value = VIBE[key].toFixed(2);
+    if (valEl)  valEl.textContent = VIBE[key].toFixed(2);
+  });
+}
 </script>
 </body>
 </html>
