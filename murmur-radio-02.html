@@ -4104,48 +4104,25 @@ async function startWeatherLayer(weather) {
   }
   _weatherActive = weather;
 
-  // Fire procedural synthesis immediately as audible fallback
+  // Procedural synthesis fires immediately as fallback / while file loads
   setTimeout(() => {
     if (_weatherActive === weather) _buildWeatherGraph(weather);
   }, 300);
 
-  // Attempt to load or generate an audio-file loop
+  // Try to load pre-generated file from weather-cache — no generation fallback
   const world = S.world;
   const slug  = weather.toLowerCase().replace(/[^a-z0-9]+/g, '_');
   const fname = `${world}-${slug}.mp3`;
+  const url   = `/weather-cache/${encodeURIComponent(fname)}`;
 
   try {
-    // Check weather-cache
-    let cached = false;
-    try {
-      const list = await fetch('/weather-cache').then(r => r.json());
-      cached = list.includes(fname);
-    } catch(e) {}
-
-    if (!cached) {
-      // Generate via ElevenLabs if we have a prompt
-      const prompt = WEATHER_PROMPTS[world]?.[weather];
-      if (!prompt) return; // no prompt defined — keep procedural
-      console.log(`[weather] generating: ${fname}`);
-      const resp = await fetch('/weather-sfx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: prompt, filename: `${world}-${slug}`, duration_seconds: 20 }),
-      });
-      if (!resp.ok) return;
-      // file is now saved server-side; fall through to load it
-    }
-
-    // Bail if weather changed while we were waiting
-    if (_weatherActive !== weather || !ctx || !weatherGain) return;
-
-    const resp    = await fetch(`/weather-cache/${encodeURIComponent(fname)}`);
+    const resp = await fetch(url);
+    if (!resp.ok) return; // file not cached yet — keep procedural
     const arrBuf  = await resp.arrayBuffer();
     const decoded = await ctx.decodeAudioData(arrBuf);
 
-    // Weather still active? Crossfade: tear procedural, bring in audio loop
     if (_weatherActive !== weather || !ctx || !weatherGain) return;
-    _teardownWeather(2.5); // slow fade of procedural
+    _teardownWeather(2.5); // fade out procedural
 
     const outG = ctx.createGain(); outG.gain.value = 0;
     outG.connect(weatherGain);
@@ -4159,12 +4136,11 @@ async function startWeatherLayer(weather) {
     _weatherSrcList = [_weatherAudioSrc];
 
     const vol = (WEATHER_PROFILES[weather] || { vol: 0.06 }).vol;
-    outG.gain.setTargetAtTime(vol, ctx.currentTime, 3.5); // gentle bloom
+    outG.gain.setTargetAtTime(vol, ctx.currentTime, 3.5);
     debugLine('weather', weather + ' [audio]');
-    console.log(`[weather] looping audio: ${fname}`);
 
   } catch(e) {
-    console.warn('[weather] audio load failed, keeping procedural:', e.message);
+    // File missing or decode error — procedural already running, nothing to do
   }
 }
 
