@@ -1109,6 +1109,39 @@ const WEATHER_PROFILES = {
   'frost':           { type: 'crystal', vol: 0.032 },
 };
 
+// Per-world per-weather ElevenLabs generation prompts
+// Used when no cached file exists in /weather-cache
+const WEATHER_PROMPTS = {
+  water: {
+    'glassy still':   'glassy calm water surface, faint lapping ripples, distant seabirds',
+    'light swell':    'gentle ocean swell, soft waves rolling, subtle surf',
+    'choppy':         'choppy waves splashing, wind over open water, spray',
+    'incoming storm': 'storm waves building at sea, gusting wind, crashing surf',
+    'steady rain':    'steady rain falling on water, soft continuous patter on the surface',
+  },
+  forest: {
+    'clear':          'forest breeze through leaves, birdsong, morning light ambience',
+    'overcast':       'quiet overcast forest, muffled ambient rustling, subdued birds',
+    'light rain':     'light rain falling through forest canopy, leaf drips, soft patter',
+    'heavy rain':     'heavy rain in dense forest, rushing streams, thunder distant',
+    'windy':          'wind through tall trees, creaking branches, rustling canopy',
+    'fog':            'foggy forest morning, muffled distant sounds, water droplets, stillness',
+    'dry still':      'dry summer forest, insects buzzing, cicadas, hot still air',
+    'after rain':     'forest after rain, water dripping from leaves, fresh air, distant birdsong',
+    'frost':          'frost in winter forest, frozen silence, occasional branch snap, crisp air',
+  },
+  city: {
+    'clear':          'city street ambience clear day, distant traffic hum, footsteps, pigeons',
+    'overcast':       'overcast city, muffled traffic, grey quiet, distant horns',
+    'light rain':     'light rain on city pavement, umbrellas, tyres on wet road',
+    'heavy rain':     'heavy rain in city, puddles, thunder, overflowing gutters',
+    'windy':          'wind through city buildings, whistling corners, paper rustling',
+    'fog':            'foggy city morning, distant foghorns, muffled traffic, dripping eaves',
+    'dry still':      'quiet city night, distant hum, occasional siren, low traffic',
+    'incoming storm': 'city storm approaching, rising wind, first drops on pavement, thunder',
+  },
+};
+
 function buildNoise(type) {
   const bufLen = ctx.sampleRate * 4;
   const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
@@ -3850,6 +3883,7 @@ let _weatherOutGain  = null;  // current fade-out gain node
 let _weatherSrcList  = [];    // source nodes to stop after fade
 let _weatherActive   = null;  // current weather name
 let _weatherDripT    = null;  // drip scheduler timeout
+let _weatherAudioSrc = null;  // looping BufferSourceNode when audio file is loaded
 
 function _teardownWeather(fadeTC = 1.8) {
   clearTimeout(_weatherDripT);
@@ -3998,17 +4032,85 @@ function _buildWeatherGraph(weather) {
   debugLine('weather', weather);
 }
 
-function startWeatherLayer(weather) {
+async function startWeatherLayer(weather) {
   _teardownWeather(1.2);
+  if (_weatherAudioSrc) {
+    try { _weatherAudioSrc.stop(); } catch(e){}
+    _weatherAudioSrc = null;
+  }
   _weatherActive = weather;
+
+  // Fire procedural synthesis immediately as audible fallback
   setTimeout(() => {
     if (_weatherActive === weather) _buildWeatherGraph(weather);
-  }, 300); // small gap between old fade and new build
+  }, 300);
+
+  // Attempt to load or generate an audio-file loop
+  const world = S.world;
+  const slug  = weather.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  const fname = `${world}-${slug}.mp3`;
+
+  try {
+    // Check weather-cache
+    let cached = false;
+    try {
+      const list = await fetch('/weather-cache').then(r => r.json());
+      cached = list.includes(fname);
+    } catch(e) {}
+
+    if (!cached) {
+      // Generate via ElevenLabs if we have a prompt
+      const prompt = WEATHER_PROMPTS[world]?.[weather];
+      if (!prompt) return; // no prompt defined — keep procedural
+      console.log(`[weather] generating: ${fname}`);
+      const resp = await fetch('/weather-sfx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: prompt, filename: `${world}-${slug}`, duration_seconds: 20 }),
+      });
+      if (!resp.ok) return;
+      // file is now saved server-side; fall through to load it
+    }
+
+    // Bail if weather changed while we were waiting
+    if (_weatherActive !== weather || !ctx || !weatherGain) return;
+
+    const resp    = await fetch(`/weather-cache/${encodeURIComponent(fname)}`);
+    const arrBuf  = await resp.arrayBuffer();
+    const decoded = await ctx.decodeAudioData(arrBuf);
+
+    // Weather still active? Crossfade: tear procedural, bring in audio loop
+    if (_weatherActive !== weather || !ctx || !weatherGain) return;
+    _teardownWeather(2.5); // slow fade of procedural
+
+    const outG = ctx.createGain(); outG.gain.value = 0;
+    outG.connect(weatherGain);
+    _weatherOutGain = outG;
+
+    _weatherAudioSrc = ctx.createBufferSource();
+    _weatherAudioSrc.buffer = decoded;
+    _weatherAudioSrc.loop   = true;
+    _weatherAudioSrc.connect(outG);
+    _weatherAudioSrc.start();
+    _weatherSrcList = [_weatherAudioSrc];
+
+    const vol = (WEATHER_PROFILES[weather] || { vol: 0.06 }).vol;
+    outG.gain.setTargetAtTime(vol, ctx.currentTime, 3.5); // gentle bloom
+    debugLine('weather', weather + ' [audio]');
+    console.log(`[weather] looping audio: ${fname}`);
+
+  } catch(e) {
+    console.warn('[weather] audio load failed, keeping procedural:', e.message);
+  }
 }
 
 function stopWeatherLayer() {
-  _teardownWeather(0.8);
   _weatherActive = null;
+  _teardownWeather(0.8);
+  if (_weatherAudioSrc) {
+    try { _weatherAudioSrc.stop(); } catch(e){}
+    _weatherAudioSrc = null;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

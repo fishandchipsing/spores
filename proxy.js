@@ -9,9 +9,11 @@ const path  = require('path');
 const PORT      = process.env.PORT || 3001;
 const EL_HOST   = 'api.elevenlabs.io';
 const ANT_HOST  = 'api.anthropic.com';
-const CACHE_DIR = path.join(__dirname, 'sfx-cache');
+const CACHE_DIR         = path.join(__dirname, 'sfx-cache');
+const WEATHER_CACHE_DIR = path.join(__dirname, 'weather-cache');
 
-if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR);
+if (!fs.existsSync(CACHE_DIR))         fs.mkdirSync(CACHE_DIR);
+if (!fs.existsSync(WEATHER_CACHE_DIR)) fs.mkdirSync(WEATHER_CACHE_DIR);
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -119,6 +121,100 @@ const server = http.createServer((req, res) => {
     } else {
       res.writeHead(404); res.end('not found');
     }
+    return;
+  }
+
+  // ── list weather-cache files → JSON ─────────────────────────────────────
+  if (req.method === 'GET' && req.url === '/weather-cache') {
+    try {
+      const files = fs.readdirSync(WEATHER_CACHE_DIR).filter(f => f.endsWith('.mp3'));
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify(files));
+    } catch(e) { res.writeHead(500); res.end(e.message); }
+    return;
+  }
+
+  // ── serve a single weather-cache file ───────────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/weather-cache/')) {
+    const filename = path.basename(decodeURIComponent(req.url.slice('/weather-cache/'.length)));
+    const filepath = path.join(WEATHER_CACHE_DIR, filename);
+    if (fs.existsSync(filepath)) {
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Access-Control-Allow-Origin': '*' });
+      fs.createReadStream(filepath).pipe(res);
+    } else {
+      res.writeHead(404); res.end('not found');
+    }
+    return;
+  }
+
+  // ── POST /weather-sfx → ElevenLabs + save to weather-cache ──────────────
+  if (req.method === 'POST' && req.url === '/weather-sfx') {
+    const elKey = process.env.EL_KEY;
+    if (!elKey) { res.writeHead(503); res.end('EL_KEY not configured'); return; }
+
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      let parsed;
+      try { parsed = JSON.parse(body); } catch(e) { res.writeHead(400); res.end('bad json'); return; }
+
+      // Deterministic filename: world-weatherslug.mp3 — serve from cache if exists
+      const filename = (parsed.filename || 'weather-unknown').replace(/[^a-z0-9_-]/gi, '_') + '.mp3';
+      const filepath = path.join(WEATHER_CACHE_DIR, filename);
+
+      if (fs.existsSync(filepath)) {
+        console.log(`  weather-cache hit: ${filename}`);
+        res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Access-Control-Allow-Origin': '*' });
+        fs.createReadStream(filepath).pipe(res);
+        return;
+      }
+
+      const payload = JSON.stringify({
+        text:             parsed.text,
+        duration_seconds: parsed.duration_seconds ?? 20,
+        prompt_influence: parsed.prompt_influence ?? 0.5,
+      });
+
+      const options = {
+        hostname: EL_HOST,
+        path:     '/v1/sound-generation',
+        method:   'POST',
+        headers:  {
+          'xi-api-key':     elKey,
+          'Content-Type':   'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      };
+
+      const proxyReq = https.request(options, proxyRes => {
+        const chunks = [];
+        proxyRes.on('data', chunk => chunks.push(chunk));
+        proxyRes.on('end', () => {
+          const audio = Buffer.concat(chunks);
+          if (proxyRes.statusCode === 200) {
+            fs.writeFile(filepath, audio, err => {
+              if (err) console.error('weather cache write error:', err.message);
+              else     console.log(`  weather cached: ${filename}`);
+            });
+          } else {
+            console.error(`ElevenLabs weather ${proxyRes.statusCode}:`, audio.toString().slice(0, 400));
+          }
+          res.writeHead(proxyRes.statusCode, {
+            'Content-Type': 'audio/mpeg',
+            'Access-Control-Allow-Origin': '*',
+          });
+          res.end(audio);
+        });
+      });
+
+      proxyReq.on('error', err => {
+        console.error('weather-sfx proxy error:', err.message);
+        res.writeHead(502); res.end(err.message);
+      });
+
+      proxyReq.write(payload);
+      proxyReq.end();
+    });
     return;
   }
 
