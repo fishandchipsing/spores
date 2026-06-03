@@ -4486,8 +4486,8 @@ function toggleRecording() {
   masterGain.connect(_recDest);
   _recChunks = [];
 
-  const mime = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus',
-                'audio/ogg','audio/mp4']
+  const mime = ['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus',
+                'audio/ogg']
     .find(t => MediaRecorder.isTypeSupported(t)) || '';
 
   _recorder = new MediaRecorder(_recDest.stream, mime ? { mimeType: mime } : {});
@@ -4501,7 +4501,7 @@ function toggleRecording() {
     try { capturedMaster.disconnect(capturedDest); } catch(e) {}
     const mimeType = _recorder ? _recorder.mimeType : (mime || '');
     const blob = new Blob(_recChunks, { type: mimeType });
-    const ext  = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'm4a' : 'webm';
+    const ext  = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = `murmur-${S.world || 'session'}-${Date.now()}.${ext}`;
