@@ -37,6 +37,21 @@
     #prog-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s linear; }
     #status   { color: var(--muted); font-size: 10px; }
     #log      { color: var(--accent); font-size: 10px; min-height: 13px; }
+    #player-wrap { display: none; flex-direction: column; gap: 10px; padding-top: 4px; }
+    #player-wrap.on { display: flex; }
+    #preview-audio {
+      width: 100%; height: 28px; outline: none;
+      filter: invert(1) hue-rotate(180deg) brightness(0.7);
+    }
+    .dl-btn {
+      display: inline-block; background: none;
+      border: 1px solid var(--accent); color: var(--accent);
+      font-family: inherit; font-size: 10px; letter-spacing: 0.12em;
+      text-transform: uppercase; padding: 7px 14px;
+      text-decoration: none; border-radius: 2px;
+      transition: color 0.2s, border-color 0.2s; text-align: center;
+    }
+    .dl-btn:hover { color: var(--bright); border-color: var(--bright); }
   </style>
 </head>
 <body>
@@ -54,6 +69,10 @@
     <div id="prog-bg"><div id="prog-fill"></div></div>
     <div id="status">—</div>
     <div id="log"></div>
+  </div>
+  <div id="player-wrap">
+    <audio id="preview-audio" controls></audio>
+    <a id="dl-link" class="dl-btn" href="#">↓ download</a>
   </div>
 </div>
 
@@ -359,15 +378,22 @@ function startCountdown(total) {
   requestAnimationFrame(tick);
 }
 
-function triggerDownload(chunks, mimeType, world) {
-  const blob = new Blob(chunks, { type: mimeType });
-  const ext  = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = `murmur-${world}-preview.${ext}`;
-  a.style.display = 'none';
-  document.body.appendChild(a); a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2500);
+function showPlayer(chunks, mimeType, world) {
+  const blob     = new Blob(chunks, { type: mimeType });
+  const ext      = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const url      = URL.createObjectURL(blob);
+  const filename = `murmur-${world}-preview.${ext}`;
+
+  const audio = document.getElementById('preview-audio');
+  audio.src = url;
+
+  const link = document.getElementById('dl-link');
+  link.href     = url;
+  link.download = filename;
+  link.textContent = '↓ download ' + filename;
+
+  document.getElementById('player-wrap').classList.add('on');
+  audio.play().catch(() => {});   // auto-play (may be blocked — download link still works)
 }
 
 // ── Generate ──────────────────────────────────────────────────────────────────
@@ -375,6 +401,7 @@ async function generate(world) {
   try {
     setBtns(false);
     document.getElementById('prog-wrap').classList.add('on');
+    document.getElementById('player-wrap').classList.remove('on');
     $fill().style.width = '0%';
     $btns().forEach(b => b.classList.toggle('active', b.textContent === world));
 
@@ -397,8 +424,8 @@ async function generate(world) {
     rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     rec.onstop = () => {
       try { masterGain.disconnect(recDest); } catch(e) {}
-      triggerDownload(chunks, rec.mimeType, world);
-      setStatus('done — murmur-' + world + '-preview downloaded');
+      showPlayer(chunks, rec.mimeType, world);
+      setStatus('done');
       setLog('');
     };
     rec.start(500);

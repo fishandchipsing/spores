@@ -110,6 +110,55 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── sfx-export HTML page — browse + bulk download ───────────────────────
+  if (req.method === 'GET' && req.url === '/sfx-export') {
+    try {
+      const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.mp3')).sort();
+      const rows  = files.map(f => {
+        const enc = encodeURIComponent(f);
+        const world = f.split('-')[0];
+        return `<tr>
+          <td style="color:#8fa87a;padding:3px 12px 3px 0">${world}</td>
+          <td style="padding:3px 12px 3px 0;color:#909080">${f.replace(/^[a-z]+-/,'').replace(/-\d+\.mp3$/,'.mp3')}</td>
+          <td><audio controls src="/sfx-cache/${enc}" style="height:24px;width:180px;vertical-align:middle"></audio></td>
+          <td style="padding-left:10px"><a href="/sfx-cache/${enc}" download="${f}" style="color:#8fa87a;text-decoration:none;font-size:10px">↓ dl</a></td>
+        </tr>`;
+      }).join('\n');
+      const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>murmur — sfx cache</title>
+<style>
+  body { background:#0e0e0b; color:#c8c8b8; font-family:'Courier New',monospace;
+         font-size:11px; letter-spacing:.06em; padding:32px; }
+  h2   { font-weight:300; letter-spacing:.18em; text-transform:uppercase; font-size:13px; margin-bottom:6px; }
+  .sub { color:#606058; font-size:10px; margin-bottom:24px; }
+  a    { color:#8fa87a; }
+  table { border-collapse:collapse; }
+</style></head><body>
+<h2>sfx cache</h2>
+<p class="sub">${files.length} file${files.length !== 1 ? 's' : ''} — <a href="/sfx-cache.tar.gz">download all as tar.gz</a></p>
+<table>${rows}</table>
+</body></html>`;
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(html);
+    } catch(e) { res.writeHead(500); res.end(e.message); }
+    return;
+  }
+
+  // ── bulk download sfx-cache as tar.gz ────────────────────────────────────
+  if (req.method === 'GET' && req.url === '/sfx-cache.tar.gz') {
+    const { spawn } = require('child_process');
+    res.writeHead(200, {
+      'Content-Type':        'application/gzip',
+      'Content-Disposition': 'attachment; filename="sfx-cache.tar.gz"',
+      'Access-Control-Allow-Origin': '*',
+    });
+    const tar = spawn('tar', ['czf', '-', '-C', __dirname, 'sfx-cache']);
+    tar.stdout.pipe(res);
+    tar.stderr.on('data', d => console.error('tar:', d.toString()));
+    tar.on('error', err => { console.error('tar error:', err.message); res.end(); });
+    return;
+  }
+
   // ── list cached files → JSON ─────────────────────────────────────────────
   if (req.method === 'GET' && req.url === '/sfx-cache') {
     try {
