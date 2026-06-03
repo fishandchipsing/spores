@@ -93,43 +93,46 @@ const CFG = {
 // ── Curated 20-second story timelines ────────────────────────────────────────
 const TL = {
   water: [
-    { t:2.0,  type:'sfx',    i:0, pan:-0.65, vol:0.80, label:'ripple stirs'    },
+    { t:2.0,  type:'sfx',    i:0, pan:-0.65, vol:0.48, label:'ripple stirs'    },
     { t:3.8,  type:'shadow', label:'resonance settles'  },
     { t:5.5,  type:'melody', n:3,             label:'water phrase'     },
-    { t:8.2,  type:'sfx',    i:1, pan:0.55,  vol:0.72, label:'distant call'    },
+    { t:7.0,  type:'pinned', i:0, pan:0.45,  vol:0.50, label:'duck'            },
+    { t:8.5,  type:'sfx',    i:1, pan:0.55,  vol:0.44, label:'distant call'    },
     { t:9.8,  type:'shadow', label:'after-tone'         },
     { t:11.5, type:'melody', n:4,             label:'melody deepens'   },
-    { t:13.8, type:'sfx',    i:2, pan:-0.3,  vol:0.62, label:'soft lapping'    },
+    { t:12.8, type:'pinned', i:1, pan:-0.3,  vol:0.42, label:'bubbles'         },
+    { t:14.5, type:'sfx',    i:2, pan:-0.3,  vol:0.40, label:'soft lapping'    },
     { t:16.0, type:'melody', n:2,             label:'last phrase'      },
     { t:17.5, type:'shadow', label:'long decay'         },
   ],
   forest: [
     { t:1.5,  type:'plings', label:'birds scatter'      },
-    { t:3.0,  type:'sfx',    i:0, pan:-0.55, vol:0.80, label:'branch snap'     },
+    { t:3.0,  type:'sfx',    i:0, pan:-0.55, vol:0.50, label:'branch snap'     },
     { t:5.2,  type:'melody', n:3,             label:'forest melody'    },
     { t:7.5,  type:'plings', label:'plings shimmer'     },
-    { t:9.0,  type:'sfx',    i:1, pan:0.60,  vol:0.72, label:'insect hum'      },
+    { t:9.0,  type:'sfx',    i:1, pan:0.60,  vol:0.45, label:'insect hum'      },
     { t:11.0, type:'shadow', label:'bloom'              },
     { t:12.8, type:'melody', n:4,             label:'melody drifts'    },
     { t:14.2, type:'plings', label:'high scatter'       },
-    { t:15.8, type:'sfx',    i:2, pan:-0.4,  vol:0.62, label:'leaf drip'       },
+    { t:15.8, type:'sfx',    i:2, pan:-0.4,  vol:0.40, label:'leaf drip'       },
     { t:17.5, type:'shadow', label:'long decay'         },
   ],
   city: [
     { t:0.5,  type:'car',                               label:'car passes'      },
-    { t:2.0,  type:'sfx',    i:0, pan:-0.4, vol:0.80,  label:'street sound'    },
+    { t:2.0,  type:'sfx',    i:0, pan:-0.4, vol:0.50,  label:'street sound'    },
     { t:3.2,  type:'car',                               label:'car passes'      },
     { t:4.5,  type:'melody', n:3,                       label:'city phrase'     },
     { t:6.0,  type:'car',                               label:'car passes'      },
-    { t:7.5,  type:'sfx',    i:1, pan:0.50, vol:0.72,  label:'city sound'      },
+    { t:7.5,  type:'sfx',    i:1, pan:0.50, vol:0.45,  label:'city sound'      },
     { t:8.8,  type:'melody', n:2,                       label:'phrase'          },
     { t:9.8,  type:'car',                               label:'car passes'      },
-    { t:11.0, type:'shadow',                            label:'city echo'       },
-    { t:12.0, type:'car',                               label:'car passes'      },
-    { t:12.8, type:'sfx',    i:2, pan:-0.3, vol:0.62,  label:'ambient sound'   },
-    { t:13.8, type:'melody', n:3,                       label:'melody returns'  },
-    { t:15.2, type:'car',                               label:'car passes'      },
-    { t:16.5, type:'car',                               label:'car passes'      },
+    { t:10.8, type:'pinned', i:0, pan:0.55, vol:0.48,  label:'bike'            },
+    { t:11.5, type:'shadow',                            label:'city echo'       },
+    { t:12.5, type:'car',                               label:'car passes'      },
+    { t:13.0, type:'sfx',    i:2, pan:-0.3, vol:0.40,  label:'ambient sound'   },
+    { t:14.0, type:'melody', n:3,                       label:'melody returns'  },
+    { t:15.5, type:'car',                               label:'car passes'      },
+    { t:16.8, type:'car',                               label:'car passes'      },
     { t:17.5, type:'shadow',                            label:'city residue'    },
   ],
 };
@@ -296,6 +299,18 @@ function playSfxBuf(buf, pan, vol) {
   src.start(t);
 }
 
+// ── Guaranteed sounds per world — always generated via /sfx ─────────────────
+const PINNED = {
+  water:  [
+    { prompt: 'mallard duck quacking, calm pond, close up',               label: 'duck'    },
+    { prompt: 'underwater bubbles rising, small pond, gentle gurgling',   label: 'bubbles' },
+  ],
+  city:   [
+    { prompt: 'bicycle passing on city street, wheels on pavement, bell', label: 'bike'    },
+  ],
+  forest: [],
+};
+
 // ── Curated fallback prompts when sfx-cache is empty ─────────────────────────
 const PROMPTS = {
   water:  [
@@ -314,6 +329,25 @@ const PROMPTS = {
     'cafe sounds, muffled voices, cutlery, city street',
   ],
 };
+
+// ── Load pinned sounds — always generated fresh via /sfx ─────────────────────
+async function loadPinned(world) {
+  const items = PINNED[world] || [];
+  const bufs  = [];
+  for (const p of items) {
+    setStatus('generating ' + p.label + '…');
+    try {
+      const res = await fetch('/sfx', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text: p.prompt, world, duration_seconds: 4 }),
+      });
+      if (!res.ok) { bufs.push(null); continue; }
+      bufs.push(await ctx.decodeAudioData(await res.arrayBuffer()));
+    } catch(e) { bufs.push(null); }
+  }
+  return bufs;
+}
 
 // ── SFX cache fetch + decode, falls back to generating via /sfx ───────────────
 async function loadSfx(world, count) {
@@ -415,7 +449,8 @@ async function generate(world) {
 
     // Audio must be init before decode
     initAudio();
-    const sfxBufs = await loadSfx(world, 4);
+    const sfxBufs    = await loadSfx(world, 3);
+    const pinnedBufs = await loadPinned(world);
 
     setStatus('starting…');
 
@@ -445,11 +480,12 @@ async function generate(world) {
         if (!ctx) return;
         setLog('→ ' + ev.label);
         switch(ev.type) {
-          case 'melody': playMelody(world, ev.n);                              break;
-          case 'shadow': playShadow(world);                                    break;
-          case 'plings': playPlings();                                         break;
-          case 'car':    playCarWhoosh();                                      break;
-          case 'sfx':    playSfxBuf(sfxBufs[ev.i % Math.max(sfxBufs.length, 1)], ev.pan, ev.vol); break;
+          case 'melody':  playMelody(world, ev.n);                                           break;
+          case 'shadow':  playShadow(world);                                               break;
+          case 'plings':  playPlings();                                                    break;
+          case 'car':     playCarWhoosh();                                                 break;
+          case 'sfx':     playSfxBuf(sfxBufs[ev.i % Math.max(sfxBufs.length, 1)], ev.pan, ev.vol); break;
+          case 'pinned':  playSfxBuf(pinnedBufs[ev.i] ?? null, ev.pan, ev.vol);           break;
         }
       }, ev.t * 1000);
     }
