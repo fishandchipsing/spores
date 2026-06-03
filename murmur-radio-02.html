@@ -1072,14 +1072,17 @@ const WORLD_INSTRUMENT = {
     maxMidi: 79,   // G5 — ethereal, water can breathe high
   },
   city: {
-    wave: 'square', wave2: 'square',
-    reverbDur: 0.55, reverbDecay: 3.5,
-    dryGain: 0.85,  wetGain: 0.18,
-    atkTime: 0.018, sustainTC: 0.9,
-    detuneRange: 9,
-    arpInterval: 160,
+    wave: 'triangle', wave2: 'triangle',
+    osc2mult: 1.004,              // unison chorus instead of octave-up
+    reverbDur: 1.4,  reverbDecay: 2.2,
+    dryGain: 0.58,   wetGain: 0.52,
+    atkTime: 0.006,  sustainTC: 2.2, // fast mallet hit, medium ring
+    detuneRange: 2,
+    arpInterval: 240,
+    arpDelay: 0.18,               // gentle mallet roll between chord notes
     drums: true,
-    maxMidi: 67,   // G4 — keep city grounded, square waves bite at high freqs
+    maxMidi: 72,                  // C5 — real vibraphone range
+    tremolo: { rate: 5.5, depth: 0.14 }, // rotating disc shimmer
   },
   forest: {
     wave: 'sine',   wave2: 'sine',
@@ -2114,7 +2117,9 @@ function _playHarmChord(degree) {
   const instr   = WORLD_INSTRUMENT[S.world] || WORLD_INSTRUMENT.water;
   const midis   = _getHarmMidis(degree);
   const now     = ctx.currentTime;
-  const arpDelay = 0.38 - VIBE.activity * 0.14;
+  const arpDelay = instr.arpDelay !== undefined
+    ? instr.arpDelay
+    : 0.38 - VIBE.activity * 0.14;
   const perNote  = (0.16 + VIBE.activity * 0.04) / midis.length;
   const dest     = _harmPreMix || moodGain;
 
@@ -2127,7 +2132,7 @@ function _playHarmChord(degree) {
     const pan  = ctx.createStereoPanner();
 
     osc.type  = instr.wave;  osc.frequency.value  = freq;
-    osc2.type = instr.wave2; osc2.frequency.value = freq * 2.001;
+    osc2.type = instr.wave2; osc2.frequency.value = freq * (instr.osc2mult || 2.001);
     osc.detune.value  = (Math.random() - 0.5) * instr.detuneRange;
     osc2.detune.value = (Math.random() - 0.5) * instr.detuneRange * 1.4;
     pan.pan.value = (midis.length > 1) ? (i / (midis.length - 1) - 0.5) * 0.52 : 0;
@@ -2162,6 +2167,19 @@ function _playHarmChord(degree) {
       bG.gain.setValueAtTime(0, t + 0.2);
       bG.gain.setTargetAtTime(perNote * 0.055, t + 0.4, 0.6);
       bSrc.start(t); _harmOscs.push({ osc: bSrc, env: bG });
+    }
+
+    // City vibraphone: AM tremolo — rotating disc shimmer
+    if (instr.tremolo) {
+      const tLFO = ctx.createOscillator();
+      tLFO.type = 'sine';
+      tLFO.frequency.value = instr.tremolo.rate;
+      const tDepth = ctx.createGain();
+      tDepth.gain.value = instr.tremolo.depth * perNote;
+      tLFO.connect(tDepth); tDepth.connect(env.gain);
+      tLFO.start(t + instr.atkTime); // start after attack settles
+      tLFO.stop(t + instr.sustainTC * 6 + 1);
+      _harmOscs.push({ osc: tLFO, env: ctx.createGain() });
     }
 
     osc.connect(env); env.connect(pan); pan.connect(dest);
@@ -4256,6 +4274,19 @@ function _playMelodyEvent() {
     env.gain.setValueAtTime(0, t);
     env.gain.linearRampToValueAtTime(noteVol, t + instr.atkTime);
     env.gain.setTargetAtTime(0, t + instr.atkTime + 0.04, instr.sustainTC * 0.35);
+
+    // Vibraphone tremolo on melody notes too
+    if (instr.tremolo) {
+      const tLFO = ctx.createOscillator();
+      tLFO.type = 'sine';
+      tLFO.frequency.value = instr.tremolo.rate;
+      const tDepth = ctx.createGain();
+      tDepth.gain.value = instr.tremolo.depth * noteVol;
+      tLFO.connect(tDepth); tDepth.connect(env.gain);
+      tLFO.start(t + instr.atkTime);
+      tLFO.stop(t + instr.sustainTC * 2);
+    }
+
     osc.start(t); osc.stop(t + instr.sustainTC * 2);
   }
 }
