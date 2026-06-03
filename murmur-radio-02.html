@@ -1093,20 +1093,20 @@ const WORLD_INSTRUMENT = {
 
 // ─── Procedural weather synthesis profiles ───────────────
 const WEATHER_PROFILES = {
-  'glassy still':    { type: 'still',   vol: 0.04 },
-  'light swell':     { type: 'swell',   vol: 0.20, lfoRate: 0.18 },
-  'choppy':          { type: 'swell',   vol: 0.30, lfoRate: 0.38 },
-  'incoming storm':  { type: 'storm',   vol: 0.34 },
-  'steady rain':     { type: 'rain',    vol: 0.26 },
-  'clear':           { type: 'still',   vol: 0.03 },
-  'overcast':        { type: 'wind',    vol: 0.09 },
-  'light rain':      { type: 'rain',    vol: 0.15 },
-  'heavy rain':      { type: 'rain',    vol: 0.38, dense: true },
-  'windy':           { type: 'wind',    vol: 0.26 },
-  'fog':             { type: 'fog',     vol: 0.08 },
-  'dry still':       { type: 'still',   vol: 0.04 },
-  'after rain':      { type: 'drips',   vol: 0.13 },
-  'frost':           { type: 'crystal', vol: 0.07 },
+  'glassy still':    { type: 'still',   vol: 0.018 },
+  'light swell':     { type: 'swell',   vol: 0.10,  lfoRate: 0.18 },
+  'choppy':          { type: 'swell',   vol: 0.14,  lfoRate: 0.38 },
+  'incoming storm':  { type: 'storm',   vol: 0.16 },
+  'steady rain':     { type: 'rain',    vol: 0.12 },
+  'clear':           { type: 'still',   vol: 0.012 },
+  'overcast':        { type: 'wind',    vol: 0.045 },
+  'light rain':      { type: 'rain',    vol: 0.07 },
+  'heavy rain':      { type: 'rain',    vol: 0.18,  dense: true },
+  'windy':           { type: 'wind',    vol: 0.12 },
+  'fog':             { type: 'fog',     vol: 0.04 },
+  'dry still':       { type: 'still',   vol: 0.018 },
+  'after rain':      { type: 'drips',   vol: 0.06 },
+  'frost':           { type: 'crystal', vol: 0.032 },
 };
 
 function buildNoise(type) {
@@ -2146,8 +2146,8 @@ function _playHarmChord(degree) {
 function _scheduleNextChord() {
   clearTimeout(_harmTimer);
   if (!_harmRunning) return;
-  // More active harmonic rhythm: 6-22s (was 18-45s), scales with activity + speed knob
-  const delay = (6 + (1 - VIBE.activity) * 16 + Math.random() * 8) * 1000 / _harmSpeedMult;
+  // Very slow harmonic changes: 40-120s, scales with activity + speed knob
+  const delay = (40 + (1 - VIBE.activity) * 50 + Math.random() * 30) * 1000 / _harmSpeedMult;
   _harmTimer = setTimeout(() => {
     if (!_harmRunning) return;
     const cfg  = WORLD_HARMONY[S.world] || WORLD_HARMONY.water;
@@ -3316,12 +3316,12 @@ function updateLayerGains(level) {
   // ambient      0.06      0.06        0.06   (always-on low chord)
 
   const nT  = level < 0.5 ? 0.10 : lerp(0.10, 0.00, (level - 0.5) / 0.5);
-  const wT  = level < 0.5 ? lerp(0.30, 0.15, level / 0.5) : lerp(0.15, 0.00, (level - 0.5) / 0.5);
+  const wT  = level < 0.5 ? lerp(0.07, 0.04, level / 0.5) : lerp(0.04, 0.00, (level - 0.5) / 0.5);
   const sT  = level < 0.5 ? 0.80 : lerp(0.80, 0.00, (level - 0.5) / 0.5);
   const shT = level < 0.5 ? lerp(0.00, 0.80, level / 0.5) : 0.80;
   const mT  = level < 0.5 ? lerp(0.00, 0.20, level / 0.5) : lerp(0.20, 0.50, (level - 0.5) / 0.5);
   const gT  = sT * 0.45;
-  const aT  = 0.06; // ambient chord: constant
+  const aT  = 0.018; // ambient chord: very faint constant
 
   // Update slider positions to show live levels
   const ns  = document.getElementById('mix-noise');
@@ -3908,7 +3908,7 @@ function _buildWeatherGraph(weather) {
       const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1800; bp.Q.value=0.8;
       const s2 = mkSrc('white');
       const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=7000; hp.Q.value=0.4;
-      const tapG = ctx.createGain(); tapG.gain.value = prof.dense ? 0.30 : 0.14;
+      const tapG = ctx.createGain(); tapG.gain.value = prof.dense ? 0.15 : 0.07;
       // Gentle tremolo = pattering feel
       const trem = ctx.createOscillator(); trem.type='sine'; trem.frequency.value = 12 + Math.random()*5;
       const tremD = ctx.createGain(); tremD.gain.value = 0.10;
@@ -3938,11 +3938,11 @@ function _buildWeatherGraph(weather) {
       const lfo = ctx.createOscillator(); lfo.type='sine'; lfo.frequency.value=0.12;
       const lfoD = ctx.createGain(); lfoD.gain.value=190;
       lfo.connect(lfoD); lfoD.connect(bpw.frequency);
-      const wG = ctx.createGain(); wG.gain.value=0.55;
+      const wG = ctx.createGain(); wG.gain.value=0.45;
       sw.connect(bpw); bpw.connect(wG); wG.connect(outG);
       const sr2 = mkSrc('pink');
       const bpr = ctx.createBiquadFilter(); bpr.type='lowpass'; bpr.frequency.value=3800; bpr.Q.value=0.5;
-      const rG = ctx.createGain(); rG.gain.value=0.60;
+      const rG = ctx.createGain(); rG.gain.value=0.45;
       sr2.connect(bpr); bpr.connect(rG); rG.connect(outG);
       sw.start(); sr2.start(); lfo.start(); srcs.push(sw, sr2, lfo);
       break;
@@ -4021,14 +4021,14 @@ function startAmbientChord(world) {
   stopAmbientChord();
   if (!ctx || !ambChordGain) return;
   const cfg = WORLD_HARMONY[world] || WORLD_HARMONY.water;
-  // Root of world key in octave 2 (MIDI: C2=36, D2=38, …)
-  const rootMidi  = 36 + cfg.key;
+  // Root of world key in octave 3 (MIDI: C3=48, D3=50, …) — not too bassy
+  const rootMidi  = 48 + cfg.key;
   const fifthMidi = rootMidi + 7;
   const octMidi   = rootMidi + 12;
   [
-    { m: rootMidi,  v: 0.85 },
-    { m: fifthMidi, v: 0.55 },
-    { m: octMidi,   v: 0.30 },
+    { m: rootMidi,  v: 0.28 },
+    { m: fifthMidi, v: 0.18 },
+    { m: octMidi,   v: 0.10 },
   ].forEach(({ m, v }) => {
     const osc = ctx.createOscillator();
     osc.type = 'sine';
