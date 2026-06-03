@@ -4518,14 +4518,17 @@ function toggleRecording() {
   if (btn) { btn.textContent = '⏹ stop'; btn.classList.add('recording'); }
 }
 
-document.getElementById('btn-preset').addEventListener('click', savePreset);
-document.getElementById('btn-record').addEventListener('click', toggleRecording);
 </script>
 
 <div id="bottom-bar">
   <button class="bottom-btn" id="btn-preset">save preset</button>
   <button class="bottom-btn" id="btn-record">⏺ record</button>
 </div>
+
+<script>
+document.getElementById('btn-preset').addEventListener('click', savePreset);
+document.getElementById('btn-record').addEventListener('click', toggleRecording);
+</script>
 
 </body>
 </html>
