@@ -4350,17 +4350,44 @@ function _bassNote(midi, t, dur) {
   osc.start(t); osc.stop(t + dur + 0.12);
 }
 
-// ── Car whooshes — background city ambient ──────────────────
+// ── Traffic system — cycles from calm to intense ─────────────
+// Three overlapping slow sines give an organic irregular rhythm
+// that feels like real traffic patterns (lights, rush hour, lulls)
+function _trafficIntensity() {
+  const t = Date.now() / 1000;
+  const a = Math.sin(t * 0.048) * 0.38;  // ~130s cycle — main pulse
+  const b = Math.sin(t * 0.11)  * 0.32;  // ~57s  — medium wave
+  const c = Math.sin(t * 0.27)  * 0.20;  // ~23s  — quick bursts
+  return Math.max(0, Math.min(1, 0.45 + a + b + c));
+}
+
+let _cityAmbientTimer = null;
+
 function startCityAmbient() {
-  const scheduleWhoosh = () => {
+  const schedule = () => {
     if (S.world !== 'city' || !S.running || !ctx) return;
-    const delay = 3500 + Math.random() * 9000;
+    const intensity = _trafficIntensity();
+
+    // Calm: one car every 6-14s / Intense: cars every 0.3-1.5s
+    const minDelay = lerp(6000,  300, intensity);
+    const maxDelay = lerp(14000, 1500, intensity);
+    const delay    = minDelay + Math.random() * (maxDelay - minDelay);
+
     _cityAmbientTimer = setTimeout(() => {
-      _carWhoosh();
-      scheduleWhoosh();
+      if (S.world !== 'city' || !S.running) return;
+      const burst = _trafficIntensity();
+      // At peak intensity, sometimes release a platoon of 2-4 cars together
+      // (like a green light dropping a queue)
+      const platoon = burst > 0.75 && Math.random() < burst * 0.55
+        ? 2 + Math.floor(Math.random() * 3)
+        : 1;
+      for (let i = 0; i < platoon; i++) {
+        setTimeout(() => _carWhoosh(burst), i * (120 + Math.random() * 280));
+      }
+      schedule();
     }, delay);
   };
-  scheduleWhoosh();
+  schedule();
 }
 
 function stopCityAmbient() {
@@ -4368,31 +4395,39 @@ function stopCityAmbient() {
   _cityAmbientTimer = null;
 }
 
-function _carWhoosh() {
+function _carWhoosh(intensity = 0.5) {
   if (!ctx || !ghostMasterGain) return;
-  const fromLeft  = Math.random() < 0.5;
-  const dur       = 1.0 + Math.random() * 0.8;
-  const now       = ctx.currentTime;
-  const s         = ctx.createBufferSource();
-  s.buffer        = _mkNoiseBuf(dur + 0.3, 'pink');
+  const fromLeft = Math.random() < 0.5;
 
-  // Bandpass: road noise character — sweeps as car passes (Doppler feel)
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
-  bp.frequency.setValueAtTime(fromLeft ? 550 : 1400, now);
-  bp.frequency.linearRampToValueAtTime(fromLeft ? 1400 : 550, now + dur);
+  // Faster cars at higher intensity (shorter crossing time)
+  const dur = lerp(1.6, 0.55, intensity) + Math.random() * 0.4;
+  const now = ctx.currentTime;
 
+  const s  = ctx.createBufferSource();
+  s.buffer = _mkNoiseBuf(dur + 0.4, 'pink');
+
+  // Bandpass sweep — higher freq cars at rush hour (faster, more engine noise)
+  const loFreq = lerp(400,  700, intensity);
+  const hiFreq = lerp(1100, 2200, intensity);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.2;
+  bp.frequency.setValueAtTime(fromLeft ? loFreq : hiFreq, now);
+  bp.frequency.linearRampToValueAtTime(fromLeft ? hiFreq : loFreq, now + dur);
+
+  // Pan sweep: full left→right or right→left
   const pan = ctx.createStereoPanner();
-  pan.pan.setValueAtTime(fromLeft ? -1.0 : 1.0, now);
+  pan.pan.setValueAtTime(fromLeft ? -1.0 :  1.0, now);
   pan.pan.linearRampToValueAtTime(fromLeft ?  1.0 : -1.0, now + dur);
 
   const env = ctx.createGain();
   s.connect(bp); bp.connect(env); env.connect(pan); pan.connect(ghostMasterGain);
 
-  const peakVol = 0.12 + Math.random() * 0.10;
+  // Louder and sharper envelope at high intensity
+  const peakVol = lerp(0.10, 0.28, intensity) + Math.random() * 0.06;
+  const riseT   = dur * lerp(0.40, 0.22, intensity);
   env.gain.setValueAtTime(0, now);
-  env.gain.linearRampToValueAtTime(peakVol, now + dur * 0.35);
-  env.gain.setTargetAtTime(0, now + dur * 0.55, 0.18);
-  s.start(now); s.stop(now + dur + 0.4);
+  env.gain.linearRampToValueAtTime(peakVol, now + riseT);
+  env.gain.setTargetAtTime(0, now + riseT + 0.08, dur * lerp(0.28, 0.14, intensity));
+  s.start(now); s.stop(now + dur + 0.5);
 }
 
 // ═══════════════════════════════════════════════════════════
