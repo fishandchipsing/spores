@@ -2301,7 +2301,7 @@ function startMood(world) {
     // Separate dry bus for percussion — bypasses reverb so kicks stay punchy
     _drumBus = ctx.createGain(); _drumBus.gain.value = 1.0;
     _drumBus.connect(moodGain);
-    startCityDrums(); startCityBass(); startCityAmbient(); startCityShadow();
+    startCityDrums(); startCityBass(); startCityAmbient();
   }
 
   // Initial level is set by updateLayerGains called after startEngine
@@ -2319,7 +2319,7 @@ function stopMood() {
   clearTimeout(_harmTimer);
   clearTimeout(_melodyPhraseTimer);
   _stopHarmOscs(0.8);
-  stopCityDrums(); stopCityBass(); stopCityAmbient(); stopCityShadow();
+  stopCityDrums(); stopCityBass(); stopCityAmbient();
   if (moodGain)   { moodGain.disconnect();   moodGain = null; }
   if (_harmConv)  { _harmConv.disconnect();  _harmConv = null; }
   if (_drumBus)   { _drumBus.disconnect();   _drumBus = null; }
@@ -2876,7 +2876,7 @@ function stopEngine(){
   S.running=false; clearTimeout(S.nextTimeout); clearInterval(S.cdInterval); clearTimeout(S.weatherTimeout);
   clearTimeout(S.arc.epochTimer); clearInterval(_epochBarInterval);
   stopAmbient(); stopViz(); stopGhostLayer(); stopShadowBus(); stopMood();
-  stopWeatherLayer(); stopCityDrums(); stopCityBass(); stopCityAmbient(); stopCityShadow();
+  stopWeatherLayer(); stopCityDrums(); stopCityBass(); stopCityAmbient();
   document.getElementById('countdown').textContent='';
   document.getElementById('start-btn').textContent='▶';
   document.getElementById('start-btn').classList.remove('on');
@@ -4425,33 +4425,7 @@ function _playMelodyEvent() {
 }
 
 // ── City shadow ticker — dense punchy stabs between events ──
-let _cityShadowTimer = null;
-
-function startCityShadow() {
-  const tick = () => {
-    if (S.world !== 'city' || !S.running || !ctx || !shadowGain) return;
-    const cfg   = WORLD_HARMONY.city;
-    const scale = HARM_MODES[cfg.mode];
-    // Pick a scale tone in the mid register
-    const degree = Math.floor(Math.random() * 7);
-    const midi   = 48 + cfg.key + scale[degree] + (Math.random() < 0.3 ? 12 : 0);
-    const freq   = _harmMidiToHz(Math.min(midi, 72));
-    const pan    = (Math.random() - 0.5) * 1.0;
-    const vol    = 0.05 + Math.random() * 0.06;
-    const wave   = Math.random() < 0.6 ? 'triangle' : 'sawtooth';
-    _shadowTone(freq, vol, 0.004, 0.12 + Math.random() * 0.25,
-                Math.max(-1, Math.min(1, pan)), wave);
-    // Faster when more active
-    const delay  = 220 + Math.random() * (800 - VIBE.activity * 400);
-    _cityShadowTimer = setTimeout(tick, delay);
-  };
-  setTimeout(tick, 600);
-}
-
-function stopCityShadow() {
-  clearTimeout(_cityShadowTimer);
-  _cityShadowTimer = null;
-}
+function stopCityShadow() {}
 // ═══════════════════════════════════════════════════════════
 // PRESET — save/load layerLevel + mixer sliders to localStorage
 // ═══════════════════════════════════════════════════════════
