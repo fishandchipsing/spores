@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>murmur — preview</title>
+  <style>
+    :root {
+      --bg: #0e0e0b; --text: #c8c8b8; --muted: #606058;
+      --accent: #8fa87a; --bright: #b8c890;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Courier New', monospace; font-size: 11px;
+      letter-spacing: 0.08em;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh;
+    }
+    #app { width: 340px; display: flex; flex-direction: column; gap: 20px; }
+    h1   { font-size: 13px; font-weight: 300; letter-spacing: 0.2em; text-transform: uppercase; }
+    .sub { color: var(--muted); font-size: 10px; line-height: 1.7; margin-top: 6px; }
+    #worlds { display: flex; gap: 8px; }
+    .wbtn {
+      flex: 1; background: none; border: 1px solid var(--muted);
+      color: var(--muted); font-family: inherit; font-size: 10px;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 9px 4px; cursor: pointer; border-radius: 2px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .wbtn:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
+    .wbtn:disabled { opacity: 0.3; cursor: default; }
+    .wbtn.active   { color: var(--bright); border-color: var(--bright); }
+    #prog-wrap { display: none; flex-direction: column; gap: 8px; }
+    #prog-wrap.on { display: flex; }
+    #prog-bg { width: 100%; height: 1px; background: rgba(255,255,255,0.08); border-radius: 1px; overflow: hidden; }
+    #prog-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s linear; }
+    #status   { color: var(--muted); font-size: 10px; }
+    #log      { color: var(--accent); font-size: 10px; min-height: 13px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div>
+    <h1>murmur preview</h1>
+    <p class="sub">generates a balanced 20-second audio snippet —<br>picks sounds from cache, adds melody + shadow</p>
+  </div>
+  <div id="worlds">
+    <button class="wbtn" onclick="generate('water')">water</button>
+    <button class="wbtn" onclick="generate('forest')">forest</button>
+    <button class="wbtn" onclick="generate('city')">city</button>
+  </div>
+  <div id="prog-wrap">
+    <div id="prog-bg"><div id="prog-fill"></div></div>
+    <div id="status">—</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── World audio profiles ──────────────────────────────────────────────────────
+const CFG = {
+  water:  { color:'brown', rumble:60,  shimmer:800,  lfoRate:0.08, lfoDepth:0.12, noiseVol:0.28,
+            scale:[0,2,4,6,7,9,11], key:2,  wave:'sine',     atk:0.55, sustTC:5.5, maxMidi:79 },
+  forest: { color:'brown', rumble:120, shimmer:2200, lfoRate:0.05, lfoDepth:0.12, noiseVol:0.28,
+            scale:[0,2,4,5,7,9,10], key:9,  wave:'sine',     atk:0.18, sustTC:4.0, maxMidi:74 },
+  city:   { color:'pink',  rumble:400, shimmer:1200, lfoRate:0.12, lfoDepth:0.10, noiseVol:0.22,
+            scale:[0,1,3,5,7,8,10], key:10, wave:'triangle', atk:0.006,sustTC:2.2, maxMidi:72,
+            tremolo:{ rate:5.5, depth:0.14 } },
+};
+
+// ── Curated 20-second story timelines ────────────────────────────────────────
+const TL = {
+  water: [
+    { t:2.0,  type:'sfx',    i:0, pan:-0.65, vol:0.50, label:'ripple stirs'    },
+    { t:3.8,  type:'shadow', label:'resonance settles'  },
+    { t:5.5,  type:'melody', n:3,             label:'water phrase'     },
+    { t:8.2,  type:'sfx',    i:1, pan:0.55,  vol:0.45, label:'distant call'    },
+    { t:9.8,  type:'shadow', label:'after-tone'         },
+    { t:11.5, type:'melody', n:4,             label:'melody deepens'   },
+    { t:13.8, type:'sfx',    i:2, pan:-0.3,  vol:0.38, label:'soft lapping'    },
+    { t:16.0, type:'melody', n:2,             label:'last phrase'      },
+    { t:17.5, type:'shadow', label:'long decay'         },
+  ],
+  forest: [
+    { t:1.5,  type:'plings', label:'birds scatter'      },
+    { t:3.0,  type:'sfx',    i:0, pan:-0.55, vol:0.50, label:'branch snap'     },
+    { t:5.2,  type:'melody', n:3,             label:'forest melody'    },
+    { t:7.5,  type:'plings', label:'plings shimmer'     },
+    { t:9.0,  type:'sfx',    i:1, pan:0.60,  vol:0.45, label:'insect hum'      },
+    { t:11.0, type:'shadow', label:'bloom'              },
+    { t:12.8, type:'melody', n:4,             label:'melody drifts'    },
+    { t:14.2, type:'plings', label:'high scatter'       },
+    { t:15.8, type:'sfx',    i:2, pan:-0.4,  vol:0.38, label:'leaf drip'       },
+    { t:17.5, type:'shadow', label:'long decay'         },
+  ],
+  city: [
+    { t:0.8,  type:'car',    label:'car passes'         },
+    { t:2.5,  type:'sfx',    i:0, pan:-0.4,  vol:0.50, label:'street sound'    },
+    { t:5.0,  type:'melody', n:3,             label:'city phrase'      },
+    { t:7.5,  type:'car',    label:'car passes'         },
+    { t:9.2,  type:'sfx',    i:1, pan:0.50,  vol:0.45, label:'city sound'      },
+    { t:11.2, type:'shadow', label:'city echo'          },
+    { t:12.8, type:'melody', n:3,             label:'melody returns'   },
+    { t:14.8, type:'car',    label:'car passes'         },
+    { t:16.0, type:'sfx',    i:2, pan:-0.3,  vol:0.38, label:'ambient sound'   },
+    { t:17.5, type:'shadow', label:'city residue'       },
+  ],
+};
+
+// ── Audio context ─────────────────────────────────────────────────────────────
+let ctx = null, masterGain = null;
+
+function initAudio() {
+  if (ctx) { try { ctx.close(); } catch(e) {} }
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = ctx.createGain();
+  masterGain.gain.value = 0.80;
+  masterGain.connect(ctx.destination);
+}
+
+// ── Noise buffer ──────────────────────────────────────────────────────────────
+function mkNoise(sec, color) {
+  const n = Math.ceil(ctx.sampleRate * sec);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d   = buf.getChannelData(0);
+  if (color === 'brown') {
+    let last = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      d[i] = last = (last + 0.02 * w) / 1.02;
+    }
+    let pk = 0;
+    for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(d[i]));
+    if (pk > 0) for (let i = 0; i < n; i++) d[i] /= pk;
+  } else {
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for (let i=0; i<n; i++) {
+      const w=Math.random()*2-1;
+      b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+      b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+      b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+      d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+    }
+  }
+  return buf;
+}
+
+function midiHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+// ── Ambient noise layer ───────────────────────────────────────────────────────
+function startAmbient(world) {
+  const c  = CFG[world];
+  const ns = ctx.createBufferSource();
+  ns.buffer = mkNoise(22, c.color); ns.loop = true;
+
+  const lo = ctx.createBiquadFilter(); lo.type='lowshelf'; lo.frequency.value=c.rumble;  lo.gain.value=7;
+  const hi = ctx.createBiquadFilter(); hi.type='peaking';  hi.frequency.value=c.shimmer; hi.Q.value=0.5; hi.gain.value=4;
+  const ng = ctx.createGain(); ng.gain.value = 0;
+
+  const lfo = ctx.createOscillator(); lfo.frequency.value = c.lfoRate;
+  const ld  = ctx.createGain(); ld.gain.value = c.lfoDepth;
+  lfo.connect(ld); ld.connect(ng.gain);
+
+  ns.connect(lo); lo.connect(hi); hi.connect(ng); ng.connect(masterGain);
+  lfo.start(); ns.start();
+
+  const t = ctx.currentTime;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(c.noiseVol, t + 2.2);
+
+  return { ns, lfo };
+}
+
+// ── Synth voices ──────────────────────────────────────────────────────────────
+function playTone(freq, vol, pan, atk, sustTC, wave, t, tremolo) {
+  const osc = ctx.createOscillator(); osc.type = wave; osc.frequency.value = freq;
+  const env = ctx.createGain();
+  const pn  = ctx.createStereoPanner(); pn.pan.value = pan;
+  osc.connect(env); env.connect(pn); pn.connect(masterGain);
+  if (tremolo) {
+    const tl = ctx.createOscillator(); tl.frequency.value = tremolo.rate;
+    const td = ctx.createGain(); td.gain.value = tremolo.depth * vol;
+    tl.connect(td); td.connect(env.gain); tl.start(t); tl.stop(t + sustTC*3+1);
+  }
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(vol, t + atk);
+  env.gain.setTargetAtTime(0, t + atk + 0.1, sustTC * 0.4);
+  osc.start(t); osc.stop(t + sustTC * 4);
+}
+
+function playMelody(world, n) {
+  const c = CFG[world];
+  const now = ctx.currentTime;
+  for (let i = 0; i < n; i++) {
+    const deg  = Math.floor(Math.random() * 7);
+    let   midi = 48 + c.key + c.scale[deg] + (Math.random() < 0.28 ? 12 : 0);
+    midi = Math.min(midi, c.maxMidi);
+    const step = c.wave === 'triangle' ? 0.25 : 0.52;
+    const t    = now + i * step * (0.8 + Math.random() * 0.4);
+    playTone(midiHz(midi), 0.09 + Math.random()*0.05,
+             (Math.random()-0.5)*0.5, c.atk, c.sustTC, c.wave, t, c.tremolo ?? null);
+  }
+}
+
+function playShadow(world) {
+  const c    = CFG[world];
+  const deg  = Math.floor(Math.random() * 7);
+  const midi = Math.min(48 + c.key + c.scale[deg] + 12, c.maxMidi);
+  const t    = ctx.currentTime;
+  const osc  = ctx.createOscillator(); osc.type='sine'; osc.frequency.value = midiHz(midi);
+  const env  = ctx.createGain();
+  const pn   = ctx.createStereoPanner(); pn.pan.value = (Math.random()-0.5)*0.7;
+  osc.connect(env); env.connect(pn); pn.connect(masterGain);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.055, t + 0.35);
+  env.gain.setTargetAtTime(0, t + 0.6, 2.8);
+  osc.start(t); osc.stop(t + 12);
+}
+
+function playPlings() {
+  const scale = [57,60,62,64,67,69,71,72,74,76];
+  const num = 2 + Math.floor(Math.random() * 3);
+  const now = ctx.currentTime;
+  for (let i = 0; i < num; i++) {
+    const freq = midiHz(scale[Math.floor(Math.random() * scale.length)]);
+    const t    = now + i * (0.12 + Math.random() * 0.25);
+    const osc  = ctx.createOscillator(); osc.type='sine'; osc.frequency.value = freq;
+    const env  = ctx.createGain();
+    const pn   = ctx.createStereoPanner(); pn.pan.value = (Math.random()-0.5)*0.9;
+    osc.connect(env); env.connect(pn); pn.connect(masterGain);
+    const vol = 0.065 + Math.random() * 0.04;
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(vol, t + 0.008);
+    env.gain.setTargetAtTime(0, t + 0.015, 0.42 + Math.random() * 0.55);
+    osc.start(t); osc.stop(t + 3.5);
+  }
+}
+
+function playCarWhoosh() {
+  const fromLeft = Math.random() < 0.5;
+  const dur = 1.0 + Math.random() * 0.8;
+  const t   = ctx.currentTime;
+  const s   = ctx.createBufferSource(); s.buffer = mkNoise(dur + 0.3, 'pink');
+  const bp  = ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=1.4;
+  bp.frequency.setValueAtTime(fromLeft ? 550 : 1400, t);
+  bp.frequency.linearRampToValueAtTime(fromLeft ? 1400 : 550, t + dur);
+  const pan = ctx.createStereoPanner();
+  pan.pan.setValueAtTime(fromLeft ? -1 : 1, t);
+  pan.pan.linearRampToValueAtTime(fromLeft ? 1 : -1, t + dur);
+  const env = ctx.createGain();
+  s.connect(bp); bp.connect(env); env.connect(pan); pan.connect(masterGain);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.13 + Math.random()*0.08, t + dur*0.35);
+  env.gain.setTargetAtTime(0, t + dur*0.55, 0.18);
+  s.start(t); s.stop(t + dur + 0.4);
+}
+
+function playSfxBuf(buf, pan, vol) {
+  if (!buf || !ctx) return;
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const lpf = ctx.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value = 3800;
+  const pn  = ctx.createStereoPanner(); pn.pan.value = pan;
+  const env = ctx.createGain();
+  src.connect(lpf); lpf.connect(pn); pn.connect(env); env.connect(masterGain);
+  const t = ctx.currentTime + 0.02;
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(vol, t + 0.12);
+  env.gain.setTargetAtTime(0, t + Math.min(buf.duration * 0.65, 3.5), 0.85);
+  src.start(t);
+}
+
+// ── SFX cache fetch + decode ──────────────────────────────────────────────────
+async function loadSfx(world, count) {
+  const bufs = [];
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 5000);
+    const res  = await fetch('/sfx-cache', { signal: ctrl.signal });
+    if (!res.ok) return bufs;
+    const all  = await res.json();
+    let files  = all.filter(f => f.startsWith(world));
+    if (!files.length) files = all;
+    // shuffle
+    for (let i = files.length-1; i > 0; i--) {
+      const j = Math.floor(Math.random()*(i+1)); [files[i],files[j]]=[files[j],files[i]];
+    }
+    for (const fname of files.slice(0, count)) {
+      try {
+        const r = await fetch(`/sfx-cache/${encodeURIComponent(fname)}`);
+        if (!r.ok) continue;
+        const ab  = await r.arrayBuffer();
+        const buf = await ctx.decodeAudioData(ab);
+        bufs.push(buf);
+      } catch(e) {}
+    }
+  } catch(e) {}
+  return bufs;
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────────
+const $btns   = () => document.querySelectorAll('.wbtn');
+const $status = () => document.getElementById('status');
+const $log    = () => document.getElementById('log');
+const $fill   = () => document.getElementById('prog-fill');
+
+function setBtns(on) { $btns().forEach(b => b.disabled = !on); }
+function setStatus(s) { $status().textContent = s; }
+function setLog(s)    { $log().textContent = s; }
+
+function startCountdown(total) {
+  const t0 = Date.now();
+  const tick = () => {
+    const el  = (Date.now() - t0) / 1000;
+    const pct = Math.min(100, (el / total) * 100);
+    $fill().style.width = pct + '%';
+    setStatus('recording — ' + Math.max(0, total - el).toFixed(1) + 's remaining');
+    if (el < total) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function triggerDownload(chunks, mimeType, world) {
+  const blob = new Blob(chunks, { type: mimeType });
+  const ext  = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `murmur-${world}-preview.${ext}`;
+  a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2500);
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+async function generate(world) {
+  try {
+    setBtns(false);
+    document.getElementById('prog-wrap').classList.add('on');
+    $fill().style.width = '0%';
+    $btns().forEach(b => b.classList.toggle('active', b.textContent === world));
+
+    setStatus('loading sfx from cache…');
+    setLog('');
+
+    // Audio must be init before decode
+    initAudio();
+    const sfxBufs = await loadSfx(world, 4);
+
+    setStatus('starting…');
+
+    // Recording setup — capture before masterGain changes
+    const recDest = ctx.createMediaStreamDestination();
+    masterGain.connect(recDest);
+    const chunks  = [];
+    const mime    = ['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg']
+      .find(t => MediaRecorder.isTypeSupported(t)) || '';
+    const rec = new MediaRecorder(recDest.stream, mime ? { mimeType: mime } : {});
+    rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    rec.onstop = () => {
+      try { masterGain.disconnect(recDest); } catch(e) {}
+      triggerDownload(chunks, rec.mimeType, world);
+      setStatus('done — murmur-' + world + '-preview downloaded');
+      setLog('');
+    };
+    rec.start(500);
+
+    // Start ambient
+    const amb = startAmbient(world);
+
+    // Execute timeline
+    const timeline = TL[world];
+    for (const ev of timeline) {
+      setTimeout(() => {
+        if (!ctx) return;
+        setLog('→ ' + ev.label);
+        switch(ev.type) {
+          case 'melody': playMelody(world, ev.n);                              break;
+          case 'shadow': playShadow(world);                                    break;
+          case 'plings': playPlings();                                         break;
+          case 'car':    playCarWhoosh();                                      break;
+          case 'sfx':    playSfxBuf(sfxBufs[ev.i % Math.max(sfxBufs.length, 1)], ev.pan, ev.vol); break;
+        }
+      }, ev.t * 1000);
+    }
+
+    // Countdown + fade out + stop
+    startCountdown(20);
+    setTimeout(() => {
+      if (masterGain) masterGain.gain.setTargetAtTime(0, ctx.currentTime, 0.85);
+    }, 18200);
+    setTimeout(() => {
+      rec.stop();
+      try { amb.ns.stop(); amb.lfo.stop(); } catch(e) {}
+      setTimeout(() => { try { ctx.close(); } catch(e) {} ctx = null; masterGain = null; }, 600);
+      setBtns(true);
+      $btns().forEach(b => b.classList.remove('active'));
+    }, 20700);
+
+  } catch(err) {
+    setStatus('error: ' + err.message);
+    setLog('');
+    setBtns(true);
+    console.error(err);
+  }
+}
+</script>
+</body>
+</html>
