@@ -52,19 +52,40 @@
       transition: color 0.2s, border-color 0.2s; text-align: center;
     }
     .dl-btn:hover { color: var(--bright); border-color: var(--bright); }
+    #prompt-input {
+      width: 100%; background: none; border: 1px solid var(--muted);
+      color: var(--text); font-family: inherit; font-size: 10px;
+      letter-spacing: 0.06em; line-height: 1.7;
+      padding: 9px 10px; border-radius: 2px; resize: none; outline: none;
+      transition: border-color 0.2s;
+    }
+    #prompt-input::placeholder { color: var(--muted); }
+    #prompt-input:focus { border-color: rgba(255,255,255,0.3); }
+    #gen-btn {
+      width: 100%; background: none; border: 1px solid var(--muted);
+      color: var(--muted); font-family: inherit; font-size: 10px;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      padding: 9px; cursor: pointer; border-radius: 2px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    #gen-btn:not(:disabled):hover { color: var(--text); border-color: var(--text); }
+    #gen-btn.ready  { color: var(--bright); border-color: var(--bright); }
+    #gen-btn:disabled { opacity: 0.3; cursor: default; }
   </style>
 </head>
 <body>
 <div id="app">
   <div>
     <h1>murmur preview</h1>
-    <p class="sub">generates a balanced 20-second audio snippet —<br>picks sounds from cache, adds melody + shadow</p>
+    <p class="sub">select a world, describe what you want to hear,<br>then generate — or leave blank for a curated take</p>
   </div>
   <div id="worlds">
-    <button class="wbtn" onclick="generate('water')">water</button>
-    <button class="wbtn" onclick="generate('forest')">forest</button>
-    <button class="wbtn" onclick="generate('city')">city</button>
+    <button class="wbtn" onclick="selectWorld('water')">water</button>
+    <button class="wbtn" onclick="selectWorld('forest')">forest</button>
+    <button class="wbtn" onclick="selectWorld('city')">city</button>
   </div>
+  <textarea id="prompt-input" rows="3" placeholder="e.g. a rainy evening with frogs calling and a distant boat horn…"></textarea>
+  <button id="gen-btn" onclick="generate()" disabled>generate</button>
   <div id="prog-wrap">
     <div id="prog-bg"><div id="prog-fill"></div></div>
     <div id="status">—</div>
@@ -395,13 +416,27 @@ async function loadSfx(world, count) {
   return bufs;
 }
 
-// ── UI ────────────────────────────────────────────────────────────────────────
+// ── UI helpers ────────────────────────────────────────────────────────────────
+let selectedWorld = null;
+
 const $btns   = () => document.querySelectorAll('.wbtn');
 const $status = () => document.getElementById('status');
 const $log    = () => document.getElementById('log');
 const $fill   = () => document.getElementById('prog-fill');
+const $genBtn = () => document.getElementById('gen-btn');
 
-function setBtns(on) { $btns().forEach(b => b.disabled = !on); }
+function selectWorld(world) {
+  selectedWorld = world;
+  $btns().forEach(b => b.classList.toggle('active', b.textContent === world));
+  const btn = $genBtn();
+  btn.disabled = false;
+  btn.classList.add('ready');
+}
+
+function setAllDisabled(on) {
+  $btns().forEach(b => b.disabled = on);
+  $genBtn().disabled = on;
+}
 function setStatus(s) { $status().textContent = s; }
 function setLog(s)    { $log().textContent = s; }
 
@@ -422,43 +457,138 @@ function showPlayer(chunks, mimeType, world) {
   const ext      = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
   const url      = URL.createObjectURL(blob);
   const filename = `murmur-${world}-preview.${ext}`;
-
-  const audio = document.getElementById('preview-audio');
-  audio.src = url;
-
-  const link = document.getElementById('dl-link');
-  link.href     = url;
-  link.download = filename;
+  const audio    = document.getElementById('preview-audio');
+  audio.src      = url;
+  const link     = document.getElementById('dl-link');
+  link.href = url; link.download = filename;
   link.textContent = '↓ download ' + filename;
-
   document.getElementById('player-wrap').classList.add('on');
-  audio.play().catch(() => {});   // auto-play (may be blocked — download link still works)
+  audio.play().catch(() => {});
 }
 
-// ── Generate ──────────────────────────────────────────────────────────────────
-async function generate(world) {
+// ── Claude timeline planner ───────────────────────────────────────────────────
+async function planTimeline(world, promptText) {
+  const extraTypes = world === 'forest'
+    ? '"plings": high delicate tones, no extra fields'
+    : world === 'city'
+    ? '"car": car passing sound, no extra fields'
+    : '';
+
+  const system = `You are a sound designer generating a 20-second ambient audio timeline.
+World: ${world}.
+Output a JSON timeline of events spanning t=0.5 to t=17.0 (fade starts at 18s).
+
+Event types:
+  "sfx"    → { t, type, prompt, pan, vol, label }  — prompt: max 12 words describing only what is heard, pan: -1 to 1, vol: 0.35–0.50
+  "melody" → { t, type, n, label }                 — n: 2–5 notes
+  "shadow" → { t, type, label }                    — ambient resonance tone
+  ${extraTypes}
+
+Requirements:
+- 3–5 sfx events spaced at least 2.5s apart
+- 2–3 melody events
+- 1–2 shadow events
+- SFX prompts describe only audible sounds, no music
+- Output ONLY valid JSON: {"events":[...]} — no markdown, no explanation`;
+
+  const res = await fetch('/claude', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model:      'claude-sonnet-4-20250514',
+      max_tokens: 700,
+      system,
+      messages:   [{ role: 'user', content: promptText }],
+    }),
+  });
+  if (!res.ok) throw new Error('Claude API returned ' + res.status);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || 'Claude error');
+  const text  = data.content[0].text;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('No JSON in Claude response');
+  return JSON.parse(match[0]).events;
+}
+
+// ── Pre-generate SFX buffers for a planned timeline ───────────────────────────
+async function prepareTimeline(world, events) {
+  const sfxEvents = events.filter(e => e.type === 'sfx');
+  for (let i = 0; i < sfxEvents.length; i++) {
+    const ev = sfxEvents[i];
+    setStatus('generating: ' + ev.label + ' (' + (i+1) + '/' + sfxEvents.length + ')…');
+    try {
+      const res = await fetch('/sfx', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text: ev.prompt, world, duration_seconds: 4 }),
+      });
+      ev.buf = res.ok ? await ctx.decodeAudioData(await res.arrayBuffer()) : null;
+    } catch(e) { ev.buf = null; }
+  }
+  return events;
+}
+
+// ── Run a timeline ────────────────────────────────────────────────────────────
+function runTimeline(world, events, sfxBufs, pinnedBufs) {
+  // events is either a planned array (with .buf) or a curated TL array (with .i index)
+  for (const ev of events) {
+    setTimeout(() => {
+      if (!ctx) return;
+      setLog('→ ' + (ev.label || ev.type));
+      switch(ev.type) {
+        case 'melody':  playMelody(world, ev.n || 3);                                    break;
+        case 'shadow':  playShadow(world);                                               break;
+        case 'plings':  playPlings();                                                    break;
+        case 'car':     playCarWhoosh();                                                 break;
+        case 'sfx':
+          // planned timeline has .buf; curated has .i index
+          playSfxBuf(ev.buf ?? sfxBufs[ev.i % Math.max(sfxBufs.length, 1)], ev.pan ?? 0, ev.vol ?? 0.45);
+          break;
+        case 'pinned':  playSfxBuf(pinnedBufs[ev.i] ?? null, ev.pan, ev.vol);           break;
+      }
+    }, ev.t * 1000);
+  }
+}
+
+// ── Main generate ─────────────────────────────────────────────────────────────
+async function generate() {
+  const world = selectedWorld;
+  if (!world) return;
+
   try {
-    setBtns(false);
+    setAllDisabled(true);
     document.getElementById('prog-wrap').classList.add('on');
     document.getElementById('player-wrap').classList.remove('on');
     $fill().style.width = '0%';
-    $btns().forEach(b => b.classList.toggle('active', b.textContent === world));
-
-    setStatus('loading sfx from cache…');
     setLog('');
 
-    // Audio must be init before decode
     initAudio();
-    const sfxBufs    = await loadSfx(world, 3);
-    const pinnedBufs = await loadPinned(world);
+
+    const promptText = document.getElementById('prompt-input').value.trim();
+    let   timeline;
+    let   sfxBufs    = [];
+    let   pinnedBufs = [];
+
+    if (promptText) {
+      // ── Prompted mode: ask Claude to plan the timeline ──
+      setStatus('planning with Claude…');
+      const events = await planTimeline(world, promptText);
+      timeline     = await prepareTimeline(world, events);
+    } else {
+      // ── Curated mode: use hardcoded timelines + cache ──
+      setStatus('loading sfx from cache…');
+      sfxBufs    = await loadSfx(world, 3);
+      pinnedBufs = await loadPinned(world);
+      timeline   = TL[world];
+    }
 
     setStatus('starting…');
 
-    // Recording setup — capture before masterGain changes
+    // Recording
     const recDest = ctx.createMediaStreamDestination();
     masterGain.connect(recDest);
-    const chunks  = [];
-    const mime    = ['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg']
+    const chunks = [];
+    const mime   = ['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg']
       .find(t => MediaRecorder.isTypeSupported(t)) || '';
     const rec = new MediaRecorder(recDest.stream, mime ? { mimeType: mime } : {});
     rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
@@ -470,43 +600,25 @@ async function generate(world) {
     };
     rec.start(500);
 
-    // Start ambient
     const amb = startAmbient(world);
+    runTimeline(world, timeline, sfxBufs, pinnedBufs);
 
-    // Execute timeline
-    const timeline = TL[world];
-    for (const ev of timeline) {
-      setTimeout(() => {
-        if (!ctx) return;
-        setLog('→ ' + ev.label);
-        switch(ev.type) {
-          case 'melody':  playMelody(world, ev.n);                                           break;
-          case 'shadow':  playShadow(world);                                               break;
-          case 'plings':  playPlings();                                                    break;
-          case 'car':     playCarWhoosh();                                                 break;
-          case 'sfx':     playSfxBuf(sfxBufs[ev.i % Math.max(sfxBufs.length, 1)], ev.pan, ev.vol); break;
-          case 'pinned':  playSfxBuf(pinnedBufs[ev.i] ?? null, ev.pan, ev.vol);           break;
-        }
-      }, ev.t * 1000);
-    }
-
-    // Countdown + fade out + stop
     startCountdown(20);
-    setTimeout(() => {
-      if (masterGain) masterGain.gain.setTargetAtTime(0, ctx.currentTime, 0.85);
-    }, 18200);
+    setTimeout(() => { if (masterGain) masterGain.gain.setTargetAtTime(0, ctx.currentTime, 0.85); }, 18200);
     setTimeout(() => {
       rec.stop();
       try { amb.ns.stop(); amb.lfo.stop(); } catch(e) {}
       setTimeout(() => { try { ctx.close(); } catch(e) {} ctx = null; masterGain = null; }, 600);
-      setBtns(true);
-      $btns().forEach(b => b.classList.remove('active'));
+      setAllDisabled(false);
+      // re-enable gen btn if world still selected
+      if (selectedWorld) { $genBtn().disabled = false; $genBtn().classList.add('ready'); }
     }, 20700);
 
   } catch(err) {
     setStatus('error: ' + err.message);
     setLog('');
-    setBtns(true);
+    setAllDisabled(false);
+    if (selectedWorld) { $genBtn().disabled = false; $genBtn().classList.add('ready'); }
     console.error(err);
   }
 }
