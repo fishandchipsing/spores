@@ -1910,9 +1910,10 @@ function _shadowCluster(dir, vol, tension) {
   const freqs = _worldFreqs();
   const panVal = _panVal(dir);
   const f = freqs[Math.min(2, Math.floor(1 + tension * 2))];
-  _shadowTone(f,                       vol,       0.025, 0.55, panVal - 0.2, 'sawtooth');
-  _shadowTone(f * Math.pow(2, 1/12),   vol * 0.72, 0.030, 0.48, panVal,       'sawtooth');
-  _shadowTone(f * Math.pow(2, 6/12),   vol * 0.52, 0.035, 0.70, panVal + 0.2, 'sawtooth');
+  const wave = _shadowWave(); // world-appropriate timbre — no sawtooth buzz
+  _shadowTone(f,                       vol,        0.025, 0.55, panVal - 0.2, wave);
+  _shadowTone(f * Math.pow(2, 1/12),   vol * 0.72, 0.030, 0.48, panVal,       wave);
+  _shadowTone(f * Math.pow(2, 6/12),   vol * 0.52, 0.035, 0.70, panVal + 0.2, wave);
 }
 
 // SWEEP — noise through a bandpass that moves across frequency space (shift)
