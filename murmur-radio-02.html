@@ -1835,7 +1835,8 @@ function _panVal(direction) {
 
 // Spawn a single tone through shadowGain, auto-releases.
 // startAt defaults to ctx.currentTime; pass a future time to schedule ahead.
-function _shadowTone(freq, vol, atkSec, decaySec, panVal, wave='sine', startAt=null) {
+function _shadowTone(freq, vol, atkSec, decaySec, panVal, wave=null, startAt=null) {
+  if (wave === null) wave = _shadowWave();
   if (!ctx || !shadowGain) return;
   const osc = ctx.createOscillator();
   osc.type = wave;
@@ -2109,7 +2110,7 @@ function playShadowPhrase(bufDuration, direction, evType) {
       freq, bVol * vol,
       0.04, decay,
       Math.max(-1, Math.min(1, pan0 + panShift)),
-      'sine',
+      null,   // uses _shadowWave() — world-appropriate timbre
       now + t
     );
   });
@@ -2117,11 +2118,36 @@ function playShadowPhrase(bufDuration, direction, evType) {
   debugLine('shadow', `phrase·${evType}·${notes.length}n·${d.toFixed(1)}s`);
 }
 
+// World-appropriate waveform for shadow tones.
+// water  → sine    (pure resonance, long sustained)
+// forest → triangle (organic, woody, odd harmonics only)
+// city   → square   (urban, mechanical, buzzy — filtered below so not too harsh)
+function _shadowWave() {
+  return { water:'sine', forest:'triangle', city:'square' }[S.world] || 'sine';
+}
+
 function startShadowBus() {
   if (!ctx) return;
   shadowGain = ctx.createGain();
   shadowGain.gain.value = 0;
-  shadowGain.connect(masterGain);
+
+  // Per-world tonal character via a post-filter on the entire shadow bus:
+  // water  — no filter (pure sine resonance passes through clean)
+  // forest — gentle lowpass at 1800Hz (warm, slightly muffled, like sound through trees)
+  // city   — highpass at 280Hz + slight presence boost (cuts mud, adds metallic bite)
+  if (S.world === 'city') {
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 280; hp.Q.value = 0.7;
+    const pk = ctx.createBiquadFilter();
+    pk.type = 'peaking'; pk.frequency.value = 2200; pk.Q.value = 1.2; pk.gain.value = 3.5;
+    shadowGain.connect(hp); hp.connect(pk); pk.connect(masterGain);
+  } else if (S.world === 'forest') {
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 1800; lp.Q.value = 0.6;
+    shadowGain.connect(lp); lp.connect(masterGain);
+  } else {
+    shadowGain.connect(masterGain);
+  }
   // Initial level is set by updateLayerGains called after startEngine
 }
 
@@ -4393,7 +4419,7 @@ function _cityShadowBeat() {
   // Alternate between deep rumble (60Hz), mid (120Hz), and upper-mid (180Hz)
   const f = freqs[Math.floor(Math.random() * 3)];  // 60, 120, or 180 Hz
   const decay = 0.25 + Math.random() * 0.5;
-  _shadowTone(f, vol, 0.012, decay, pan, 'sine');
+  _shadowTone(f, vol, 0.012, decay, pan); // uses _shadowWave() = 'square' for city
 }
 
 // ── City drums ──────────────────────────────────────────────
