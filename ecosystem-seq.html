@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ecosystem</title>
+<title>pond</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html,body { width:100%; height:100%; background:#07070f; overflow:hidden; color:#fff; font-family:'Courier New',monospace; }
+html,body { width:100%; height:100%; background:#060c0e; overflow:hidden; color:#fff; font-family:'Courier New',monospace; }
 body { display:flex; flex-direction:column; }
 
 #world { flex:1; position:relative; min-height:0; }
@@ -15,35 +15,35 @@ canvas { display:block; width:100%; height:100%; }
 
 #phase-tag {
   position:absolute; top:20px; left:50%; transform:translateX(-50%);
-  font-size:9px; letter-spacing:0.3em; text-transform:uppercase;
-  color:rgba(255,255,255,0.2);
+  font-size:9px; letter-spacing:0.28em; text-transform:uppercase;
+  color:rgba(255,255,255,0.18);
 }
 #act-bar {
   position:absolute; top:38px; left:50%; transform:translateX(-50%);
-  width:90px; height:1px; background:rgba(255,255,255,0.07);
+  width:90px; height:1px; background:rgba(255,255,255,0.06);
 }
-#act-fill { height:100%; width:0%; background:rgba(255,255,255,0.28); transition:width 3.5s cubic-bezier(0.4,0,0.2,1); }
+#act-fill { height:100%; width:0%; background:rgba(255,255,255,0.24); transition:width 3.5s cubic-bezier(0.4,0,0.2,1); }
 
 #log {
   position:absolute; bottom:10px; left:18px;
-  font-size:9px; color:rgba(255,255,255,0.18); line-height:2.1; pointer-events:none;
+  font-size:9px; color:rgba(255,255,255,0.16); line-height:2.1; pointer-events:none;
 }
 
 #bar {
   flex-shrink:0; height:50px;
   display:flex; align-items:center; gap:18px; padding:0 18px;
-  background:#07070f; border-top:1px solid rgba(255,255,255,0.06);
+  background:#060c0e; border-top:1px solid rgba(255,255,255,0.05);
 }
-.c { display:flex; align-items:center; gap:7px; font-size:9px; letter-spacing:0.14em; text-transform:uppercase; color:rgba(255,255,255,0.35); }
-input[type=range] { width:70px; accent-color:rgba(255,255,255,0.4); cursor:pointer; }
+.c { display:flex; align-items:center; gap:7px; font-size:9px; letter-spacing:0.13em; text-transform:uppercase; color:rgba(255,255,255,0.32); }
+input[type=range] { width:70px; accent-color:rgba(255,255,255,0.38); cursor:pointer; }
 button {
-  background:transparent; border:1px solid rgba(255,255,255,0.14); color:rgba(255,255,255,0.5);
-  font:9px/1 'Courier New',monospace; letter-spacing:0.14em; text-transform:uppercase;
+  background:transparent; border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.46);
+  font:9px/1 'Courier New',monospace; letter-spacing:0.13em; text-transform:uppercase;
   padding:5px 14px; cursor:pointer;
 }
-button:hover { border-color:rgba(255,255,255,0.35); color:rgba(255,255,255,0.85); }
-button.on { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.38); color:#fff; }
-#info { margin-left:auto; font-size:9px; color:rgba(255,255,255,0.18); letter-spacing:0.05em; }
+button:hover { border-color:rgba(255,255,255,0.32); color:rgba(255,255,255,0.82); }
+button.on { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.35); color:#fff; }
+#info { margin-left:auto; font-size:9px; color:rgba(255,255,255,0.16); letter-spacing:0.05em; }
 </style>
 </head>
 <body>
@@ -60,14 +60,14 @@ button.on { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.3
 <div id="bar">
   <button id="btnPlay">play</button>
   <div class="c">
-    <label>bpm</label>
-    <input type="range" id="slBpm" min="30" max="200" value="72">
-    <span id="vBpm">72</span>
+    <label>tempo</label>
+    <input type="range" id="slBpm" min="20" max="160" value="58">
+    <span id="vBpm">58</span>
   </div>
   <div class="c">
     <label>field</label>
-    <input type="range" id="slField" min="20" max="160" value="72">
-    <span id="vField">72</span>
+    <input type="range" id="slField" min="20" max="160" value="68">
+    <span id="vField">68</span>
   </div>
   <button id="btnMidi">midi</button>
   <div id="info">—</div>
@@ -81,59 +81,101 @@ const cv  = document.getElementById('c');
 const ctx = cv.getContext('2d');
 const worldEl = document.getElementById('world');
 
-function resize() {
-  cv.width  = worldEl.clientWidth;
-  cv.height = worldEl.clientHeight;
-}
+function resize() { cv.width = worldEl.clientWidth; cv.height = worldEl.clientHeight; }
 resize();
 new ResizeObserver(resize).observe(worldEl);
 
-function WR() { return Math.min(cv.width, cv.height) / 2 * 0.78; }
+function WR() { return Math.min(cv.width, cv.height) / 2 * 0.76; }
 function CX() { return cv.width  / 2; }
 function CY() { return cv.height / 2; }
 
-// ── arc phases (the director script) ──────────────────────────────────────
-// Each arc has: name, duration range (seconds), target activity (0-1),
-// count = how many agents enter scene (by PRIORITY order).
+// ── pond arc phases ────────────────────────────────────────────────────────
+// The director script — shapes the day at the pond
 const ARCS = [
-  { name:'stillness',   minD:40, maxD:72,  act:0.10, count:2 },
-  { name:'stirring',    minD:22, maxD:42,  act:0.28, count:3 },
-  { name:'gathering',   minD:20, maxD:38,  act:0.56, count:5 },
-  { name:'convergence', minD:16, maxD:30,  act:0.82, count:7 },
-  { name:'peak',        minD:12, maxD:24,  act:1.00, count:7 },
-  { name:'dispersal',   minD:22, maxD:40,  act:0.36, count:4 },
+  { name:'dawn stillness', minD:40, maxD:70,  act:0.09, count:2 },  // carp + heron
+  { name:'pond waking',    minD:22, maxD:40,  act:0.26, count:3 },  // + trout
+  { name:'midmorning',     minD:20, maxD:36,  act:0.52, count:5 },  // + perch + minnow
+  { name:'feeding time',   minD:16, maxD:28,  act:0.78, count:6 },  // + pike enters
+  { name:'full activity',  minD:12, maxD:22,  act:1.00, count:7 },  // + kingfisher darts through
+  { name:'afternoon lull', minD:24, maxD:42,  act:0.32, count:4 },  // settling back
 ];
 
-// activation priority: root always first, spark always last
-const PRIORITY = ['root','tide','pulse','step','wing','voice','spark'];
+// activation order — dawn starts with carp (patient) + heron (watching)
+const PRIORITY = ['carp','heron','trout','perch','minnow','pike','kingfisher'];
 
-// ── agent definitions ──────────────────────────────────────────────────────
-// spd   = pixels/second at ACTIVITY=1, BPM=72
-// wRate = wander angle drift per second (radians) — higher = more erratic
-// affinity: positive = attracted, negative = repelled
+// ── pond creatures ─────────────────────────────────────────────────────────
+// spd        pixels/second at ACTIVITY=1, tempo=58
+// wRate      wander angle drift per second — higher = more erratic
+// affinity   +pull toward, −push away from
+// soloMin/Max seconds between solo events (before activity scaling)
+// soloLabel  what the creature is doing when it fires alone
+// soloNote   MIDI note for solo (defaults to note if absent)
+// soloDur    duration ms for solo event
 const DEFS = [
-  { id:'root',  name:'Root',  col:'#c4a882', note:36, vel:100, dur:500,
-    spd:40,  wRate:1.0,  affinity:{ tide:0.40, pulse:0.18 } },
-  { id:'tide',  name:'Tide',  col:'#7fc4c4', note:43, vel:88,  dur:700,
-    spd:58,  wRate:0.55, affinity:{ root:0.22 } },
-  { id:'pulse', name:'Pulse', col:'#84c4a2', note:38, vel:90,  dur:130,
-    spd:86,  wRate:1.7,  affinity:{} },
-  { id:'step',  name:'Step',  col:'#c4c484', note:42, vel:80,  dur:55,
-    spd:118, wRate:4.0,  affinity:{ spark:0.28 } },
-  { id:'wing',  name:'Wing',  col:'#84a4c4', note:46, vel:70,  dur:85,
-    spd:138, wRate:1.4,  affinity:{ voice:-0.24 } },
-  { id:'voice', name:'Voice', col:'#c884a8', note:49, vel:115, dur:900,
-    spd:20,  wRate:0.40, affinity:{ root:0.50, tide:0.35 } },
-  { id:'spark', name:'Spark', col:'#e8c060', note:64, vel:95,  dur:28,
-    spd:205, wRate:5.5,  affinity:{ wing:0.20, step:0.18 } },
+  {
+    id:'carp', name:'Carp', col:'#c8a460', note:38, vel:88, dur:700,
+    spd:28, wRate:0.65,
+    affinity:{ trout:0.18, heron:-0.28 },
+    soloMin:14, soloMax:30, soloLabel:'surfaces',
+    soloNote:38, soloVel:55, soloDur:900,   // soft deep bubble
+    type:'fish',
+  },
+  {
+    id:'heron', name:'Heron', col:'#b8bcc4', note:60, vel:105, dur:700,
+    spd:10, wRate:0.28,
+    affinity:{ perch:0.22, carp:0.12 },     // edges toward prey
+    soloMin:22, soloMax:50, soloLabel:'strikes',
+    soloNote:60, soloVel:115, soloDur:120,  // sudden sharp strike
+    type:'bird',
+  },
+  {
+    id:'trout', name:'Trout', col:'#84b0c4', note:45, vel:84, dur:180,
+    spd:72, wRate:2.0,
+    affinity:{ carp:0.14, minnow:0.10 },
+    soloMin:8, soloMax:18, soloLabel:'breaks surface',
+    soloNote:57, soloVel:78, soloDur:80,   // quick splash
+    type:'fish',
+  },
+  {
+    id:'perch', name:'Perch', col:'#98c488', note:52, vel:80, dur:100,
+    spd:62, wRate:1.6,
+    affinity:{ minnow:0.28, pike:-0.42 },
+    soloMin:10, soloMax:24, soloLabel:'lurks',
+    soloNote:52, soloVel:65, soloDur:200,  // still hover
+    type:'fish',
+  },
+  {
+    id:'minnow', name:'Minnow', col:'#d0d0a4', note:62, vel:72, dur:50,
+    spd:105, wRate:4.8,
+    affinity:{ trout:0.16, perch:-0.18, pike:-0.60 },
+    soloMin:5, soloMax:12, soloLabel:'darts',
+    soloNote:69, soloVel:68, soloDur:30,   // tiny flick
+    type:'fish',
+  },
+  {
+    id:'pike', name:'Pike', col:'#7878a0', note:43, vel:98, dur:350,
+    spd:50, wRate:0.85,
+    affinity:{},                            // predator — nothing attracts it
+    soloMin:18, soloMax:38, soloLabel:'lunges',
+    soloNote:36, soloVel:108, soloDur:180, // predator strike — deep thud
+    type:'fish',
+  },
+  {
+    id:'kingfisher', name:'Kingfisher', col:'#5898d4', note:67, vel:92, dur:35,
+    spd:175, wRate:2.2,
+    affinity:{ minnow:0.38, trout:0.20 },
+    soloMin:28, soloMax:55, soloLabel:'calls',
+    soloNote:74, soloVel:88, soloDur:60,   // bright brief call
+    type:'bird',
+  },
 ];
 
-// ── runtime state ──────────────────────────────────────────────────────────
+// ── state ──────────────────────────────────────────────────────────────────
 let running     = false;
-let bpm         = 72;
-let fieldDist   = 72;
-let ACTIVITY    = 0.08;
-let tgtActivity = 0.08;
+let bpm         = 58;
+let fieldDist   = 68;
+let ACTIVITY    = 0.07;
+let tgtActivity = 0.07;
 let arcIdx      = 0;
 let arcDur      = 55;
 let arcElapsed  = 0;
@@ -142,18 +184,21 @@ let lastMs      = 0;
 let midiOut     = null;
 let midiOn      = false;
 let encounters  = 0;
+let soloEvents  = 0;
 
 const ripples   = [];
-const cooldowns = {};   // pairKey → lastFireMs
+const cooldowns = {};   // pairKey → lastEncounterMs
 const logLines  = [];
 const MAX_LOG   = 5;
 
-// ── build agent objects ────────────────────────────────────────────────────
+// ── build agents ───────────────────────────────────────────────────────────
 const agents = DEFS.map(d => ({
   ...d,
-  x: 0, y: 0, vx: 0, vy: 0,
+  x:0, y:0, vx:0, vy:0,
   wAngle: Math.random() * Math.PI * 2,
-  opacity: 0, active: false, exiting: false,
+  opacity:0, active:false, exiting:false,
+  _soloAt: null,  // ms timestamp for next solo event
+  _flash: 0,      // 0-1, solo flash brightness
 }));
 
 function byId(id) { return agents.find(a => a.id === id); }
@@ -168,7 +213,7 @@ function enterArc(i) {
 
   const wanted = PRIORITY.slice(0, arc.count);
   agents.forEach(a => {
-    if ( wanted.includes(a.id) && !a.active)              spawnAgent(a);
+    if ( wanted.includes(a.id) && !a.active)               spawnAgent(a);
     if (!wanted.includes(a.id) &&  a.active && !a.exiting) retireAgent(a);
   });
 
@@ -184,70 +229,124 @@ function tickArc(dt) {
 function spawnAgent(a) {
   a.active = true; a.exiting = false;
   const ang = Math.random() * Math.PI * 2;
-  const r   = WR() * 0.72;
+  const r   = WR() * 0.70;
   a.x = CX() + Math.cos(ang) * r;
   a.y = CY() + Math.sin(ang) * r;
   a.vx = 0; a.vy = 0;
-  // initial heading roughly toward center
-  a.wAngle = Math.atan2(CY() - a.y, CX() - a.x) + (Math.random() - 0.5) * 1.2;
+  a.wAngle = Math.atan2(CY() - a.y, CX() - a.x) + (Math.random() - 0.5) * 1.3;
+  scheduleSolo(a);
 }
 
-function retireAgent(a) { a.exiting = true; }
+function retireAgent(a) {
+  a.exiting = true;
+  a._soloAt = null;
+}
+
+// ── solo events ────────────────────────────────────────────────────────────
+function scheduleSolo(a) {
+  // activity raises frequency: at ACTIVITY=1 delays are ~40% shorter
+  const actMult = 1.8 - ACTIVITY * 0.9;
+  const delay   = (a.soloMin + Math.random() * (a.soloMax - a.soloMin)) * actMult;
+  a._soloAt = Date.now() + delay * 1000;
+}
+
+function checkSoloEvents() {
+  const now = Date.now();
+  for (const a of agents) {
+    if (!a.active || a.exiting || a.opacity < 0.55) continue;
+    if (!a._soloAt) { scheduleSolo(a); continue; }
+    if (now >= a._soloAt) {
+      scheduleSolo(a);
+      fireSolo(a);
+    }
+  }
+}
+
+function fireSolo(a) {
+  soloEvents++;
+  a._flash = 1.0;  // visual pulse
+
+  // small focused ripple on the agent
+  ripples.push({
+    x: a.x, y: a.y,
+    r0: a.type === 'bird' ? 6 : 8,
+    r1: a.type === 'bird' ? 28 : 32,
+    born: Date.now(),
+    life: 500 + Math.random() * 300,
+    str: 0.30,
+    solo: true,
+  });
+
+  const note = a.soloNote !== undefined ? a.soloNote : a.note;
+  const vel  = a.soloVel  !== undefined ? a.soloVel  : Math.round(a.vel * 0.7);
+  const dur  = a.soloDur  !== undefined ? a.soloDur  : Math.round(a.dur * 0.6);
+  midiNote(note, vel, dur);
+
+  addLog(`${a.name.toLowerCase()} ${a.soloLabel || 'stirs'}`);
+  document.getElementById('info').textContent =
+    `${encounters} encounters  ${soloEvents} solo`;
+}
 
 // ── physics ────────────────────────────────────────────────────────────────
 function updateAgents(dt) {
   const cx = CX(), cy = CY(), wr = WR();
-  const spdScale = bpm / 72;
+  const spdScale = bpm / 58;
 
   for (const a of agents) {
-    // fade opacity
+    // opacity fade in/out
     if (a.active && !a.exiting) {
-      a.opacity = Math.min(1, a.opacity + dt * 1.4);
+      a.opacity = Math.min(1, a.opacity + dt * 1.3);
     } else {
-      a.opacity = Math.max(0, a.opacity - dt * 0.8);
+      a.opacity = Math.max(0, a.opacity - dt * 0.75);
       if (a.opacity <= 0 && a.exiting) { a.active = false; a.exiting = false; }
     }
     if (a.opacity < 0.01) continue;
 
-    // wander: drift heading angle
+    // flash decay
+    if (a._flash > 0) a._flash = Math.max(0, a._flash - dt * 4);
+
+    // wander: slowly drift heading
     a.wAngle += (Math.random() - 0.5) * a.wRate * dt;
 
     const targetSpd = a.spd * ACTIVITY * spdScale;
 
-    // desired velocity from wander direction
+    // desired velocity = wander direction
     let dvx = Math.cos(a.wAngle) * targetSpd;
     let dvy = Math.sin(a.wAngle) * targetSpd;
 
-    // affinity forces — pull/push toward other agents
+    // affinity forces
     for (const [oid, str] of Object.entries(a.affinity)) {
       const b = byId(oid);
-      if (!b || b.opacity < 0.15) continue;
+      if (!b || b.opacity < 0.12) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d  = Math.hypot(dx, dy) || 1;
-      // force grows with distance up to ~180px, creates loose orbital pull
-      const mag = str * targetSpd * 0.45 * Math.min(1, d / 180);
+      // pull strengthens with distance up to ~200px
+      const mag = str * targetSpd * 0.42 * Math.min(1, d / 190);
       dvx += (dx / d) * mag;
       dvy += (dy / d) * mag;
     }
 
-    // soft boundary repulsion
+    // heron barely moves — damp its velocity heavily
+    if (a.id === 'heron') { dvx *= 0.25; dvy *= 0.25; }
+
+    // boundary repulsion
     const bx = a.x - cx, by = a.y - cy;
     const bd = Math.hypot(bx, by) || 1;
-    const margin = wr - 28;
+    const margin = wr - 26;
     if (bd > margin) {
-      const excess = (bd - margin) / 28;
-      dvx -= (bx / bd) * excess * targetSpd * 2.2;
-      dvy -= (by / bd) * excess * targetSpd * 2.2;
+      const excess = (bd - margin) / 26;
+      dvx -= (bx / bd) * excess * targetSpd * 2.4;
+      dvy -= (by / bd) * excess * targetSpd * 2.4;
     }
 
-    // exiting agents drift outward
+    // exiting: drift toward boundary
     if (a.exiting) {
-      dvx += (bx / bd) * targetSpd * 1.0;
-      dvy += (by / bd) * targetSpd * 1.0;
+      dvx += (bx / bd) * targetSpd * 0.9;
+      dvy += (by / bd) * targetSpd * 0.9;
     }
 
-    // smooth velocity toward target
-    const lr = Math.min(0.85, dt * 4.0);
+    // smooth velocity
+    const lr = Math.min(0.85, dt * 3.8);
     a.vx += (dvx - a.vx) * lr;
     a.vy += (dvy - a.vy) * lr;
 
@@ -256,12 +355,12 @@ function updateAgents(dt) {
   }
 }
 
-// ── collision / encounter ──────────────────────────────────────────────────
-function checkCollisions() {
+// ── encounters (pair collisions) ───────────────────────────────────────────
+function checkEncounters() {
   const now  = Date.now();
   const vis  = agents.filter(a => a.active && !a.exiting && a.opacity > 0.5);
-  // cooldown is longer when calm — events are rarer during stillness
-  const cdMs = 2200 + (1 - ACTIVITY) * 4000;
+  // longer cooldown when calm — encounters are rarer at dawn
+  const cdMs = 2500 + (1 - ACTIVITY) * 4500;
 
   for (let i = 0; i < vis.length; i++) {
     for (let j = i + 1; j < vis.length; j++) {
@@ -285,31 +384,38 @@ function fireEncounter(a, b, dist) {
   const mx   = (a.x + b.x) / 2;
   const my   = (a.y + b.y) / 2;
 
-  // ripple ring at meeting point
+  // ripple at meeting midpoint — larger than solo ripples
   ripples.push({
     x: mx, y: my,
-    r0: 12, r1: fieldDist * 1.5,
+    r0: 14, r1: fieldDist * 1.5,
     born: Date.now(),
-    life: 900 + prox * 800,
-    str:  0.45 + prox * 0.55,
+    life: 1000 + prox * 900,
+    str:  0.48 + prox * 0.52,
+    solo: false,
   });
 
-  // MIDI: both notes as a dyad, velocity scaled by closeness
+  // MIDI dyad — both agents' notes
   const vel = Math.min(127, Math.round((a.vel + b.vel) / 2 * (0.55 + prox * 0.45)));
   midiNote(a.note, vel,               a.dur);
-  midiNote(b.note, Math.round(vel * 0.76), b.dur);
+  midiNote(b.note, Math.round(vel * 0.74), b.dur);
+
+  // predator–prey encounter: scatter extra MIDI note
+  if ((a.id === 'pike' || b.id === 'pike') || (a.id === 'heron' || b.id === 'heron')) {
+    const prey = (a.id === 'pike' || a.id === 'heron') ? b : a;
+    setTimeout(() => midiNote(prey.note + 12, Math.round(vel * 0.5), 40), 120);
+  }
 
   addLog(`${a.name.toLowerCase()} × ${b.name.toLowerCase()}`);
   document.getElementById('info').textContent =
-    `${encounters} encounter${encounters !== 1 ? 's' : ''}`;
+    `${encounters} encounters  ${soloEvents} solo`;
 }
 
 // ── midi ───────────────────────────────────────────────────────────────────
 function midiNote(note, vel, dur) {
   if (!midiOn || !midiOut) return;
   const t = performance.now();
-  midiOut.send([0x90, note, vel], t);
-  midiOut.send([0x80, note, 0],   t + dur);
+  midiOut.send([0x90, note & 0x7f, vel & 0x7f], t);
+  midiOut.send([0x80, note & 0x7f, 0],           t + dur);
 }
 
 async function initMidi() {
@@ -329,7 +435,7 @@ async function initMidi() {
   }
 }
 
-// ── event log ──────────────────────────────────────────────────────────────
+// ── log ────────────────────────────────────────────────────────────────────
 function addLog(msg) {
   logLines.unshift(msg);
   if (logLines.length > MAX_LOG) logLines.pop();
@@ -338,7 +444,7 @@ function addLog(msg) {
 
 // ── activity smooth ────────────────────────────────────────────────────────
 function smoothActivity(dt) {
-  ACTIVITY += (tgtActivity - ACTIVITY) * Math.min(1, dt * 0.9);
+  ACTIVITY += (tgtActivity - ACTIVITY) * Math.min(1, dt * 0.85);
 }
 
 // ── render ─────────────────────────────────────────────────────────────────
@@ -347,47 +453,47 @@ function render() {
   const cx = CX(), cy = CY(), wr = WR();
   const now = Date.now();
 
-  // fade trail — shorter during peak (busier = more ephemeral)
-  ctx.fillStyle = `rgba(7,7,15,${0.18 + (1 - ACTIVITY) * 0.10})`;
+  // pond fade — slightly bluish black, longer trails when calm
+  ctx.fillStyle = `rgba(6,12,14,${0.17 + (1 - ACTIVITY) * 0.11})`;
   ctx.fillRect(0, 0, W, H);
 
-  // world boundary circle
+  // pond boundary
   ctx.beginPath();
   ctx.arc(cx, cy, wr, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(255,255,255,${0.04 + ACTIVITY * 0.07})`;
+  ctx.strokeStyle = `rgba(100,160,180,${0.05 + ACTIVITY * 0.07})`;
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // proximity field lines between nearby agents
+  // field lines between nearby agents
   const vis = agents.filter(a => a.opacity > 0.05);
   for (let i = 0; i < vis.length; i++) {
     for (let j = i + 1; j < vis.length; j++) {
       const a = vis[i], b = vis[j];
       const dx = b.x - a.x, dy = b.y - a.y;
       const d  = Math.hypot(dx, dy);
-      const maxD = fieldDist * 2.6;
+      const maxD = fieldDist * 2.5;
       if (d > maxD) continue;
       const t = 1 - d / maxD;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-      ctx.strokeStyle = `rgba(255,255,255,${t * t * 0.14 * Math.min(a.opacity, b.opacity)})`;
-      ctx.lineWidth = 0.6;
+      ctx.strokeStyle = `rgba(255,255,255,${t * t * 0.12 * Math.min(a.opacity, b.opacity)})`;
+      ctx.lineWidth = 0.5;
       ctx.stroke();
     }
   }
 
-  // ripple rings (expand and fade)
+  // ripples
   for (let i = ripples.length - 1; i >= 0; i--) {
     const r   = ripples[i];
     const age = (now - r.born) / r.life;
     if (age >= 1) { ripples.splice(i, 1); continue; }
-    const ease = 1 - Math.pow(1 - age, 2);
-    const rad  = r.r0 + (r.r1 - r.r0) * ease;
-    const alpha = (1 - age) * r.str * 0.5;
+    const ease  = 1 - Math.pow(1 - age, 2);
+    const rad   = r.r0 + (r.r1 - r.r0) * ease;
+    const alpha = (1 - age) * r.str * (r.solo ? 0.38 : 0.52);
     ctx.beginPath();
     ctx.arc(r.x, r.y, rad, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-    ctx.lineWidth = Math.max(0.3, 1.6 * (1 - ease));
+    ctx.lineWidth = Math.max(0.2, 1.5 * (1 - ease));
     ctx.stroke();
   }
 
@@ -395,31 +501,57 @@ function render() {
   for (const a of agents) {
     if (a.opacity < 0.01) continue;
 
-    // outer glow
+    const glowR = a.type === 'bird' ? 28 : 34;
+    const coreR = a.type === 'bird' ? 8  : 12;
+    const flashBoost = a._flash * 0.5;
+
+    // outer glow (brighter when flashing)
     ctx.save();
-    ctx.globalAlpha = a.opacity * 0.20;
-    const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, 38);
+    ctx.globalAlpha = a.opacity * (0.18 + flashBoost * 0.3);
+    const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, glowR);
     g.addColorStop(0, a.col); g.addColorStop(1, 'transparent');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(a.x, a.y, 38, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(a.x, a.y, glowR, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
 
     // core
     ctx.save();
     ctx.globalAlpha = a.opacity;
-    ctx.shadowBlur  = 16;
+    ctx.shadowBlur  = 12 + flashBoost * 20;
     ctx.shadowColor = a.col;
     ctx.fillStyle   = a.col;
-    ctx.beginPath(); ctx.arc(a.x, a.y, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    if (a.type === 'bird') {
+      // birds: small triangle / diamond shape
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      ctx.rotate(a.wAngle);
+      ctx.beginPath();
+      ctx.moveTo(coreR * 1.4, 0);
+      ctx.lineTo(-coreR, -coreR * 0.7);
+      ctx.lineTo(-coreR * 0.5, 0);
+      ctx.lineTo(-coreR, coreR * 0.7);
+      ctx.closePath();
+      ctx.restore();
+    } else {
+      // fish: oval aligned to heading
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      ctx.rotate(a.wAngle);
+      ctx.scale(1.5, 0.75);
+      ctx.beginPath(); ctx.arc(0, 0, coreR, 0, Math.PI * 2);
+      ctx.restore();
+    }
+    ctx.fill();
     ctx.restore();
 
     // name label
     ctx.save();
-    ctx.globalAlpha = a.opacity * 0.42;
+    ctx.globalAlpha = a.opacity * 0.38;
     ctx.fillStyle   = '#fff';
     ctx.font        = '9px "Courier New"';
     ctx.textAlign   = 'center';
-    ctx.fillText(a.name.toLowerCase(), a.x, a.y + 25);
+    ctx.fillText(a.name.toLowerCase(), a.x, a.y + coreR + 14);
     ctx.restore();
   }
 }
@@ -431,7 +563,8 @@ function loop(ms) {
   smoothActivity(dt);
   tickArc(dt);
   updateAgents(dt);
-  checkCollisions();
+  checkEncounters();
+  checkSoloEvents();
   render();
   rafId = requestAnimationFrame(loop);
 }
@@ -445,8 +578,8 @@ document.getElementById('btnPlay').addEventListener('click', () => {
     document.getElementById('btnPlay').textContent = 'play';
     document.getElementById('btnPlay').classList.remove('on');
   } else {
-    running = true; encounters = 0;
-    ACTIVITY = 0.08; tgtActivity = 0.08;
+    running = true; encounters = 0; soloEvents = 0;
+    ACTIVITY = 0.07; tgtActivity = 0.07;
     lastMs = performance.now();
     enterArc(0);
     rafId = requestAnimationFrame(loop);
