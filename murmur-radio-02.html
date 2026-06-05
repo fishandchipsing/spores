@@ -1266,16 +1266,78 @@ function startAmbient(world) {
   lfoNode2.connect(lf2); lf2.connect(lg2.gain);
 
   noiseSource.start(); noiseSource2.start(); lfoNode.start(); lfoNode2.start();
-  ambGain.gain.setTargetAtTime(0.55, ctx.currentTime, 2.5);
-  lg2.gain.setTargetAtTime(0.32, ctx.currentTime, 3.5);
 
-  let fw = setInterval(() => {
-    if (!noiseFilter) { clearInterval(fw); return; }
-    noiseFilter.frequency.setTargetAtTime(p.shimmer.freq*(0.75+Math.random()*0.5), ctx.currentTime, 6);
-  }, 8000);
+  if (world === 'forest') {
+    // Forest: near-silence between gusts — wind scheduler takes over dynamics
+    lfoGain.gain.value = 0.012;   // tiny continuous shimmer only
+    ambGain.gain.setValueAtTime(0.02, ctx.currentTime);
+    lg2.gain.setValueAtTime(0.01, ctx.currentTime);
+    _startForestWind();
+  } else {
+    ambGain.gain.setTargetAtTime(0.55, ctx.currentTime, 2.5);
+    lg2.gain.setTargetAtTime(0.32, ctx.currentTime, 3.5);
+    let fw = setInterval(() => {
+      if (!noiseFilter) { clearInterval(fw); return; }
+      noiseFilter.frequency.setTargetAtTime(p.shimmer.freq*(0.75+Math.random()*0.5), ctx.currentTime, 6);
+    }, 8000);
+  }
 }
 
+// ── Forest wind swoosh scheduler ─────────────────────────────────────────
+// Replaces the continuous LFO-driven noise with discrete gusts.
+// Each gust: near-silence → swell over 2-5s → brief peak → long tail back to quiet.
+// Filter sweeps low → high → low during each gust for the wind pitch character.
+let _forestWindTimer = null;
+
+function _startForestWind() {
+  clearTimeout(_forestWindTimer);
+  _scheduleForestWind();
+}
+
+function _stopForestWind() {
+  clearTimeout(_forestWindTimer);
+  _forestWindTimer = null;
+}
+
+function _scheduleForestWind() {
+  if (!S.running || S.world !== 'forest' || !ctx || !ambGain) return;
+  const swooshDur = _playForestGust();
+  const gap       = 800 + Math.random() * 5500;  // 0.8-6.3s of quiet after
+  _forestWindTimer = setTimeout(_scheduleForestWind, swooshDur * 1000 + gap);
+}
+
+function _playForestGust() {
+  if (!ctx || !ambGain) return 4;
+  const now      = ctx.currentTime;
+  const peak     = 0.52 + Math.random() * 0.42;   // varies: gentle breeze to full gust
+  const riseTime = 1.8  + Math.random() * 2.8;    // 1.8-4.6s rise
+  const holdTime = 0.1  + Math.random() * 1.2;    // brief hold at peak
+  const fallTime = 3.0  + Math.random() * 5.5;    // 3-8.5s long tail
+  const total    = riseTime + holdTime + fallTime;
+
+  // Gain envelope: near-silence → swell → hold → long fade
+  ambGain.gain.cancelScheduledValues(now);
+  ambGain.gain.setValueAtTime(ambGain.gain.value, now);
+  ambGain.gain.linearRampToValueAtTime(peak,  now + riseTime);
+  ambGain.gain.setValueAtTime(peak,            now + riseTime + holdTime);
+  ambGain.gain.linearRampToValueAtTime(0.02,   now + total);
+
+  // Filter sweep: starts low (200 Hz — deep rumble) → rises as wind peaks
+  // (800-1600 Hz airy rush) → falls back as it fades
+  if (noiseFilter) {
+    const hiFreq = 700 + Math.random() * 900;  // peak varies per gust
+    noiseFilter.frequency.cancelScheduledValues(now);
+    noiseFilter.frequency.setValueAtTime(220,     now);
+    noiseFilter.frequency.linearRampToValueAtTime(hiFreq, now + riseTime + holdTime);
+    noiseFilter.frequency.linearRampToValueAtTime(180,    now + total);
+  }
+
+  return total;
+}
+// ─────────────────────────────────────────────────────────────────────────
+
 function stopAmbient() {
+  _stopForestWind();
   try { noiseSource  && noiseSource.stop();  } catch(e){}
   try { noiseSource2 && noiseSource2.stop(); } catch(e){}
   try { lfoNode      && lfoNode.stop();      } catch(e){}
