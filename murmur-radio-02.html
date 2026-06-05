@@ -2604,6 +2604,17 @@ async function fireEvent(){
     const { ev, rawPrompt, rawResponse } = await callClaude();
     if(ev.agent_updates){ for(const [id,st] of Object.entries(ev.agent_updates)) S.agentStates[id]=st; }
     addEventRow(ev);
+    // Capture to recording script if active
+    if (_recorder && _recorder.state === 'recording' && _recMeta) {
+      _recEvents.push({
+        time:         +((Date.now() - _recMeta.startMs) / 1000).toFixed(2),
+        agent:        ev.agent        || null,
+        description:  ev.description  || '',
+        type:         ev.type         || 'moment',
+        direction:    ev.direction    || null,
+        sound_prompt: ev.sound_prompt || null,
+      });
+    }
     S.recentEvents.push(ev); if(S.recentEvents.length>8) S.recentEvents.shift();
     S.eventCount++; tickPhase();
     // Arc beat tracking
@@ -4633,9 +4644,11 @@ loadPreset(); // run immediately on parse so sliders have values before engine s
 // ═══════════════════════════════════════════════════════════
 // RECORDER — MediaStreamDestinationNode → MediaRecorder → download
 // ═══════════════════════════════════════════════════════════
-let _recorder = null;
+let _recorder  = null;
 let _recChunks = [];
 let _recDest   = null;
+let _recEvents = [];   // events captured during recording with relative timestamps
+let _recMeta   = null; // { world, weather, timeOfDay, startMs } snapped at record start
 
 function toggleRecording() {
   if (_recorder && _recorder.state !== 'inactive') {
@@ -4647,9 +4660,16 @@ function toggleRecording() {
     return;
   }
 
-  _recDest = ctx.createMediaStreamDestination();
+  _recDest   = ctx.createMediaStreamDestination();
   masterGain.connect(_recDest);
   _recChunks = [];
+  _recEvents = [];
+  _recMeta   = {
+    world:     S.world     || 'unknown',
+    weather:   S.weather   || '',
+    timeOfDay: S.timeOfDay || '',
+    startMs:   Date.now(),
+  };
 
   const mime = ['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus',
                 'audio/ogg']
@@ -4661,19 +4681,48 @@ function toggleRecording() {
   // Capture locals so onstop is safe even if world restarts mid-recording
   const capturedDest   = _recDest;
   const capturedMaster = masterGain;
+  const capturedMeta   = _recMeta;
+  const capturedEvents = _recEvents;
 
   _recorder.onstop = () => {
     try { capturedMaster.disconnect(capturedDest); } catch(e) {}
+
     const mimeType = _recorder ? _recorder.mimeType : (mime || '');
     const blob = new Blob(_recChunks, { type: mimeType });
     const ext  = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = `murmur-${S.world || 'session'}-${Date.now()}.${ext}`;
+    const stopMs = Date.now();
+    const base   = `murmur-${capturedMeta.world}-${stopMs}`;
+
+    // ── audio download ──
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url; a.download = `${base}.${ext}`;
     a.style.display = 'none';
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 2000);
+
+    // ── JSON script download (slight delay so both triggers register) ──
+    const script = {
+      world:     capturedMeta.world,
+      weather:   capturedMeta.weather,
+      timeOfDay: capturedMeta.timeOfDay,
+      recorded:  new Date(capturedMeta.startMs).toISOString(),
+      duration:  +((stopMs - capturedMeta.startMs) / 1000).toFixed(2),
+      events:    capturedEvents,
+    };
+    const jBlob = new Blob([JSON.stringify(script, null, 2)], { type: 'application/json' });
+    const jUrl  = URL.createObjectURL(jBlob);
+    const aj    = document.createElement('a');
+    aj.href = jUrl; aj.download = `${base}.json`;
+    aj.style.display = 'none';
+    document.body.appendChild(aj);
+    setTimeout(() => {
+      aj.click();
+      setTimeout(() => { document.body.removeChild(aj); URL.revokeObjectURL(jUrl); }, 2000);
+    }, 600);
+
     _recorder = null; _recDest = null; _recChunks = [];
+    _recEvents = []; _recMeta = null;
     const btn = document.getElementById('btn-record');
     if (btn) { btn.textContent = '⏺ record'; btn.classList.remove('recording'); }
   };
