@@ -2040,8 +2040,9 @@ function playShadowPhrase(bufDuration, direction, evType) {
   const now    = ctx.currentTime;
   const d      = Math.max(0.8, bufDuration); // guard against very short files
 
-  // Notes pulled from the active harmony chord (always in key)
-  const midis  = _getHarmMidis(_harmCurrent);
+  // Notes pulled from the active harmony chord — cap at 4 tones (no 9th)
+  // so shadow phrases never reach the shrill high register of extended chords
+  const midis  = _getHarmMidis(_harmCurrent).slice(0, 4);
   const hFreqs = midis.map(m => _harmMidiToHz(m));
   const root2  = hFreqs[0] * 0.5; // octave-down root for grounding
 
@@ -2085,8 +2086,8 @@ function playShadowPhrase(bufDuration, direction, evType) {
       }));
       break;
     case 'distant':
-      // Single high note, barely there
-      notes = [{ t: d * 0.28, freq: hFreqs[hFreqs.length - 1] * 2, vol: 0.50, decay: 2.2 }];
+      // Single mid note, barely there — no doubling, stays in register
+      notes = [{ t: d * 0.28, freq: hFreqs[Math.floor(hFreqs.length / 2)], vol: 0.38, decay: 2.2 }];
       break;
     case 'residue':
       // Slow pair — long tails, diminuendo
@@ -2427,6 +2428,7 @@ function startMood(world) {
     _drumBus = ctx.createGain(); _drumBus.gain.value = 1.0;
     _drumBus.connect(moodGain);
     startCityDrums(); startCityBass(); startCityAmbient();
+    _startCityShadowRhythm();
   }
 
   // Initial level is set by updateLayerGains called after startEngine
@@ -2446,7 +2448,7 @@ function stopMood() {
   clearTimeout(_cityPulseTimer);
   _cityPulseCount = 0;
   _stopHarmOscs(0.8);
-  stopCityDrums(); stopCityBass(); stopCityAmbient();
+  stopCityDrums(); stopCityBass(); stopCityAmbient(); _stopCityShadowRhythm();
   if (moodGain)   { moodGain.disconnect();   moodGain = null; }
   if (_harmConv)  { _harmConv.disconnect();  _harmConv = null; }
   if (_drumBus)   { _drumBus.disconnect();   _drumBus = null; }
@@ -4347,7 +4349,43 @@ let _drumRunning = false, _drumTimer = null;
 let _bassRunning = false, _bassTimer = null;
 let _drumBus = null; // dry bus — bypasses vibraphone reverb so drums stay punchy
 let _cityAmbientTimer = null;
+let _cityShadowTimer  = null; // fills shadow layer with urban texture between narrative events
 
+// ── City shadow texture — fills shadowGain between narrative events ─────────
+// Fires periodic low-level urban tones: low-mid sine pulses that give the
+// shadow layer a sense of constant city undercurrent even in quiet moments.
+function _startCityShadowRhythm() {
+  clearTimeout(_cityShadowTimer);
+  _scheduleCityShadowBeat();
+}
+
+function _stopCityShadowRhythm() {
+  clearTimeout(_cityShadowTimer);
+  _cityShadowTimer = null;
+}
+
+function _scheduleCityShadowBeat() {
+  if (!S.running || S.world !== 'city' || !ctx || !shadowGain) return;
+  // Fires every 1–4s, faster when active
+  const delay = (1000 + (1 - VIBE.activity) * 3000 + Math.random() * 1200);
+  _cityShadowTimer = setTimeout(() => {
+    _cityShadowBeat();
+    _scheduleCityShadowBeat();
+  }, delay);
+}
+
+function _cityShadowBeat() {
+  if (!ctx || !shadowGain || !S.running || S.world !== 'city') return;
+  const freqs = _worldFreqs(); // city: [60, 120, 180, 240, 300, 360]
+  const pan   = (Math.random() - 0.5) * 0.7;
+  const vol   = 0.055 + VIBE.activity * 0.055;
+  // Alternate between deep rumble (60Hz), mid (120Hz), and upper-mid (180Hz)
+  const f = freqs[Math.floor(Math.random() * 3)];  // 60, 120, or 180 Hz
+  const decay = 0.25 + Math.random() * 0.5;
+  _shadowTone(f, vol, 0.012, decay, pan, 'sine');
+}
+
+// ── City drums ──────────────────────────────────────────────
 function startCityDrums() {
   if (!ctx || _drumRunning) return;
   _drumRunning = true;
