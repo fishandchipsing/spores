@@ -88,6 +88,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/ecosystem') {
+    const file = path.join(__dirname, 'ecosystem-seq.html');
+    if (fs.existsSync(file)) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      fs.createReadStream(file).pipe(res);
+    } else {
+      res.writeHead(404); res.end('ecosystem-seq.html not found');
+    }
+    return;
+  }
+
   if (req.method === 'GET' && req.url === '/murmur2') {
     const file = path.join(__dirname, 'murmur-radio-02.html');
     if (fs.existsSync(file)) {

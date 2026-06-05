@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ecosystem seq</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0c0c0a; color: #b8b8a8;
+      font-family: 'Courier New', monospace; font-size: 11px;
+      letter-spacing: .06em; overflow: hidden;
+      height: 100vh; display: flex; flex-direction: column;
+    }
+    #canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+    #main-svg    { width: 100%; height: 100%; display: block; }
+
+    /* ── Controls bar ─────────────────────────────── */
+    #controls {
+      height: 54px; background: #0e0e0c; border-top: 1px solid #1e1e1c;
+      display: flex; align-items: center; gap: 20px; padding: 0 22px; flex-shrink: 0;
+    }
+    .ctrl-group { display: flex; align-items: center; gap: 8px; }
+    .ctrl-label { color: #484840; font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+    #btn-play {
+      background: none; border: 1px solid #484840; color: #484840;
+      font-family: inherit; font-size: 10px; letter-spacing: .12em;
+      text-transform: uppercase; padding: 6px 16px; cursor: pointer;
+      border-radius: 2px; transition: all .2s; min-width: 56px;
+    }
+    #btn-play:hover              { border-color: #b8b8a8; color: #b8b8a8; }
+    #btn-play.playing            { border-color: #82c4a8; color: #82c4a8; }
+    input[type=range] {
+      -webkit-appearance: none; height: 1px; background: #2a2a28;
+      outline: none; cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 11px; height: 11px;
+      border-radius: 50%; background: #b8b8a8; cursor: pointer;
+    }
+    #bpm-slider  { width: 110px; }
+    #bpm-val     { color: #b8b8a8; font-size: 14px; min-width: 34px; }
+    select {
+      background: #0e0e0c; border: 1px solid #2a2a28; color: #b8b8a8;
+      font-family: inherit; font-size: 10px; padding: 4px 8px;
+      border-radius: 2px; cursor: pointer; outline: none; max-width: 160px;
+    }
+    #beat-pip { margin-left: auto; display: flex; gap: 5px; align-items: center; }
+    .pip { width: 5px; height: 5px; border-radius: 50%; background: #2a2a28; transition: background .08s; }
+    .pip.on { background: #82c4a8; }
+
+    /* ── Agent panel ──────────────────────────────── */
+    #agent-panel {
+      position: absolute; right: 18px; top: 18px; width: 210px;
+      background: rgba(10,10,8,.94); border: 1px solid #252522;
+      padding: 16px; border-radius: 3px; display: none;
+    }
+    #agent-panel.on { display: block; }
+    #panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    #panel-name   { font-size: 12px; font-weight: 300; letter-spacing: .15em; text-transform: uppercase; }
+    #panel-close  { background: none; border: none; color: #484840; cursor: pointer; font-size: 14px; padding: 0; }
+    #panel-close:hover { color: #b8b8a8; }
+    .prop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+    .prop-lbl  { color: #484840; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; flex: 0 0 70px; }
+    .prop-sld  { flex: 1; margin: 0 8px; height: 1px; -webkit-appearance: none;
+                 background: #2a2a28; outline: none; cursor: pointer; }
+    .prop-sld::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px;
+                                       border-radius: 50%; cursor: pointer; }
+    .prop-val  { color: #b8b8a8; font-size: 10px; min-width: 32px; text-align: right; }
+    .rels      { margin-top: 12px; border-top: 1px solid #1e1e1c; padding-top: 12px; }
+    .rels-lbl  { color: #484840; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 7px; }
+    .rel-row   { font-size: 10px; color: #484840; margin-bottom: 4px; }
+    .rel-row .trg  { color: #82c4a8; }
+    .rel-row .sup  { color: #c48282; }
+    .mute-row  { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
+    .mute-btn  {
+      background: none; border: 1px solid #2a2a28; color: #484840;
+      font-family: inherit; font-size: 9px; letter-spacing: .1em;
+      text-transform: uppercase; padding: 4px 10px; cursor: pointer;
+      border-radius: 2px; transition: all .2s;
+    }
+    .mute-btn.muted { border-color: #c48282; color: #c48282; }
+    .mute-btn:hover { border-color: #b8b8a8; color: #b8b8a8; }
+  </style>
+</head>
+<body>
+<div id="canvas-wrap">
+  <svg id="main-svg" viewBox="0 0 600 540" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <marker id="arr-t" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+        <path d="M0,0 L5,2.5 L0,5 Z" fill="rgba(130,196,168,.55)"/>
+      </marker>
+      <marker id="arr-s" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+        <path d="M0,0 L5,2.5 L0,5 Z" fill="rgba(196,130,130,.45)"/>
+      </marker>
+    </defs>
+    <g id="conn-layer"></g>
+    <g id="agent-layer"></g>
+    <!-- center -->
+    <g id="center-g" style="cursor:pointer" onclick="tapTempo()">
+      <circle cx="300" cy="270" r="38" fill="none" stroke="#1e1e1c" stroke-width="1"/>
+      <text id="bpm-center" x="300" y="265" text-anchor="middle"
+            fill="#383830" font-family="'Courier New',monospace" font-size="20" letter-spacing="1">120</text>
+      <text x="300" y="280" text-anchor="middle"
+            fill="#282820" font-family="'Courier New',monospace" font-size="8" letter-spacing="3">BPM</text>
+      <text id="bar-center" x="300" y="297" text-anchor="middle"
+            fill="#282820" font-family="'Courier New',monospace" font-size="8" letter-spacing="1">—</text>
+    </g>
+  </svg>
+
+  <div id="agent-panel">
+    <div id="panel-header">
+      <span id="panel-name">—</span>
+      <button id="panel-close" onclick="closePanel()">✕</button>
+    </div>
+    <div class="prop">
+      <span class="prop-lbl">note</span>
+      <span class="prop-val" id="panel-note">—</span>
+    </div>
+    <div class="prop">
+      <span class="prop-lbl">rate</span>
+      <input class="prop-sld" type="range" id="sld-rate" min="0.25" max="8" step="0.25"
+             oninput="setAgentProp('rate',+this.value,'panel-rate-val','b')">
+      <span class="prop-val" id="panel-rate-val">—</span>
+    </div>
+    <div class="prop">
+      <span class="prop-lbl">jitter</span>
+      <input class="prop-sld" type="range" id="sld-jitter" min="0" max="1" step="0.05"
+             oninput="setAgentProp('jitter',+this.value,'panel-jitter-val','')">
+      <span class="prop-val" id="panel-jitter-val">—</span>
+    </div>
+    <div class="prop">
+      <span class="prop-lbl">threshold</span>
+      <input class="prop-sld" type="range" id="sld-threshold" min="0.05" max="1" step="0.05"
+             oninput="setAgentProp('threshold',+this.value,'panel-threshold-val','')">
+      <span class="prop-val" id="panel-threshold-val">—</span>
+    </div>
+    <div class="prop">
+      <span class="prop-lbl">energy ↑</span>
+      <input class="prop-sld" type="range" id="sld-er" min="0" max="0.15" step="0.002"
+             oninput="setAgentProp('energyRate',+this.value,'panel-er-val','')">
+      <span class="prop-val" id="panel-er-val">—</span>
+    </div>
+    <div class="prop">
+      <span class="prop-lbl">velocity</span>
+      <input class="prop-sld" type="range" id="sld-vel" min="1" max="127" step="1"
+             oninput="setAgentProp('vel',+this.value,'panel-vel-val','')">
+      <span class="prop-val" id="panel-vel-val">—</span>
+    </div>
+    <div class="rels">
+      <div class="rels-lbl">connections</div>
+      <div id="panel-rels"></div>
+    </div>
+    <div class="mute-row">
+      <button class="mute-btn" id="mute-btn" onclick="toggleMute()">mute</button>
+    </div>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="btn-play" onclick="togglePlay()">play</button>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">bpm</span>
+    <input type="range" id="bpm-slider" min="40" max="220" value="120" oninput="setBPM(+this.value)">
+    <span id="bpm-val">120</span>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">midi out</span>
+    <select id="midi-sel" onchange="selectOut(this.value)">
+      <option value="">— none —</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">lines</span>
+    <input type="checkbox" id="chk-conn" checked onchange="renderConns()">
+  </div>
+
+  <div id="beat-pip">
+    <div class="pip" id="pip0"></div>
+    <div class="pip" id="pip1"></div>
+    <div class="pip" id="pip2"></div>
+    <div class="pip" id="pip3"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Agent definitions ─────────────────────────────────────────────────────────
+// rate: base firing interval in beats
+// jitter: 0–1 timing randomness (fraction of rate)
+// threshold: energy level needed to fire (0–1)
+// energyRate: natural energy buildup per 16th-note tick
+//   → set to threshold/(rate*4) for an agent that fires reliably at base rate
+//   → set lower for agents that need triggers to fire
+const AGENTS = [
+  { id:'root',  name:'Root',  color:'#c4a882', note:36, channel:1, vel:100, dur:80,
+    rate:2,    jitter:0.05, threshold:0.30, energyRate:0.038,
+    triggers:  { pulse:0.15 },
+    suppresses:{ spark:0.35, wing:0.25 } },
+
+  { id:'pulse', name:'Pulse', color:'#82c4a8', note:38, channel:1, vel:90,  dur:60,
+    rate:1,    jitter:0.08, threshold:0.30, energyRate:0.075,
+    triggers:  { step:0.40, wing:0.20 },
+    suppresses:{} },
+
+  { id:'step',  name:'Step',  color:'#c4c882', note:42, channel:1, vel:80,  dur:40,
+    rate:1,    jitter:0.20, threshold:0.50, energyRate:0.040,
+    triggers:  { wing:0.30, spark:0.20 },
+    suppresses:{} },
+
+  { id:'wing',  name:'Wing',  color:'#82a8c4', note:46, channel:1, vel:70,  dur:30,
+    rate:0.5,  jitter:0.30, threshold:0.60, energyRate:0.010,
+    triggers:  { spark:0.30 },
+    suppresses:{} },
+
+  { id:'voice', name:'Voice', color:'#c882a8', note:49, channel:1, vel:110, dur:200,
+    rate:4,    jitter:0.10, threshold:0.90, energyRate:0.000,
+    triggers:  { root:0.30, pulse:0.30 },
+    suppresses:{ wing:0.50, spark:0.40 } },
+
+  { id:'spark', name:'Spark', color:'#c8a882', note:43, channel:1, vel:85,  dur:35,
+    rate:0.5,  jitter:0.40, threshold:0.55, energyRate:0.020,
+    triggers:  { voice:0.15 },
+    suppresses:{} },
+
+  { id:'tide',  name:'Tide',  color:'#82c4c4', note:51, channel:1, vel:95,  dur:300,
+    rate:8,    jitter:0.05, threshold:0.30, energyRate:0.009,
+    triggers:  { pulse:0.40, step:0.40 },
+    suppresses:{ spark:0.60, wing:0.50 } },
+];
+
+// Runtime state (initialised per agent)
+AGENTS.forEach(a => {
+  a.energy          = 0;
+  a.lastFireTick    = -9999;
+  a.jitterOffset    = 0;
+  a.muted           = false;
+  a.circEl          = null;   // SVG circle
+  a.ringEl          = null;   // energy ring
+  a.flashPending    = false;
+});
+
+// ── Global state ──────────────────────────────────────────────────────────────
+let bpm          = 120;
+let isPlaying    = false;
+let audioCtx     = null;
+let nextTickTime = 0;
+let currentTick  = 0;      // 16th-note counter
+let schedTimer   = null;
+let midiOut      = null;
+let midiAccess   = null;
+let selAgent     = null;
+
+// Tap tempo
+let tapTimes     = [];
+
+const LOOKAHEAD  = 25;    // ms — scheduler poll interval
+const SCHED_AHEAD = 0.12; // s  — schedule this far ahead
+
+// Layout
+const CX = 300, CY = 270, R = 190;
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function byId(id) { return AGENTS.find(a => a.id === id); }
+function tickDur() { return (60 / bpm) / 4; } // seconds per 16th note
+
+function agentPos(i) {
+  const angle = (i / AGENTS.length) * 2 * Math.PI - Math.PI / 2;
+  return { x: CX + R * Math.cos(angle), y: CY + R * Math.sin(angle) };
+}
+
+// ── Scheduler ─────────────────────────────────────────────────────────────────
+function scheduler() {
+  while (nextTickTime < audioCtx.currentTime + SCHED_AHEAD) {
+    processAgents(currentTick, nextTickTime);
+    // Beat pip (visual)
+    if (currentTick % 4 === 0) {
+      const beat = (currentTick / 4) % 4;
+      const delayMs = (nextTickTime - audioCtx.currentTime) * 1000;
+      setTimeout(() => updatePips(beat), Math.max(0, delayMs));
+    }
+    nextTickTime += tickDur();
+    currentTick++;
+  }
+  schedTimer = setTimeout(scheduler, LOOKAHEAD);
+}
+
+function processAgents(tick, time) {
+  for (const a of AGENTS) {
+    if (a.muted) { a.energy = Math.max(0, a.energy - 0.005); continue; }
+
+    // Natural energy rise
+    a.energy = Math.min(1, a.energy + a.energyRate);
+
+    // Fire check
+    const minInterval = a.rate * 4;                         // in ticks
+    const since       = tick - a.lastFireTick;
+    const fireAt      = Math.max(Math.floor(minInterval * 0.8),
+                                 minInterval + a.jitterOffset);
+
+    if (since >= fireAt && a.energy >= a.threshold) {
+      fireAgent(a, time);
+    }
+  }
+}
+
+function fireAgent(a, time) {
+  a.energy       = 0;
+  a.lastFireTick = currentTick;
+  a.jitterOffset = Math.round((Math.random() - 0.5) * a.jitter * a.rate * 4);
+
+  // MIDI
+  sendMIDI(a, time);
+
+  // Ecosystem propagation
+  for (const [tid, amt] of Object.entries(a.triggers)) {
+    const t = byId(tid); if (t) t.energy = Math.min(1, t.energy + amt);
+  }
+  for (const [tid, amt] of Object.entries(a.suppresses)) {
+    const t = byId(tid); if (t) t.energy = Math.max(0, t.energy - amt);
+  }
+
+  // Visual flash (delayed to match audio time)
+  const delayMs = (time - audioCtx.currentTime) * 1000;
+  setTimeout(() => flash(a), Math.max(0, delayMs));
+}
+
+// ── MIDI ──────────────────────────────────────────────────────────────────────
+async function initMIDI() {
+  if (!navigator.requestMIDIAccess) {
+    document.getElementById('midi-sel').innerHTML = '<option>not supported (use Chrome)</option>';
+    return;
+  }
+  try {
+    midiAccess = await navigator.requestMIDIAccess();
+    populateOutputs();
+    midiAccess.onstatechange = populateOutputs;
+  } catch(e) { console.warn('MIDI:', e); }
+}
+
+function populateOutputs() {
+  const sel = document.getElementById('midi-sel');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— none —</option>';
+  for (const [id, out] of midiAccess.outputs) {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = out.name;
+    if (id === cur) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+function selectOut(id) {
+  midiOut = midiAccess ? midiAccess.outputs.get(id) : null;
+}
+
+function sendMIDI(a, time) {
+  if (!midiOut) return;
+  const ch  = (a.channel - 1) & 0xf;
+  const vel = Math.min(127, Math.round(a.vel * (0.65 + a.energy * 0.35)));
+  const abs = performance.now() + Math.max(0, (time - audioCtx.currentTime) * 1000);
+  midiOut.send([0x90 | ch, a.note, vel],  abs);
+  midiOut.send([0x80 | ch, a.note, 0],    abs + a.dur);
+}
+
+// ── Play / Stop ───────────────────────────────────────────────────────────────
+function togglePlay() {
+  if (isPlaying) {
+    isPlaying = false;
+    clearTimeout(schedTimer);
+    document.getElementById('btn-play').textContent = 'play';
+    document.getElementById('btn-play').classList.remove('playing');
+    document.getElementById('bpm-center').setAttribute('fill', '#383830');
+    updatePips(-1);
+  } else {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    isPlaying    = true;
+    currentTick  = 0;
+    nextTickTime = audioCtx.currentTime + 0.05;
+    // Stagger initial fires so everything doesn't hit at once
+    AGENTS.forEach(a => {
+      a.energy       = 0;
+      a.lastFireTick = -Math.floor(Math.random() * a.rate * 4 + 1);
+      a.jitterOffset = 0;
+    });
+    scheduler();
+    document.getElementById('btn-play').textContent = 'stop';
+    document.getElementById('btn-play').classList.add('playing');
+    document.getElementById('bpm-center').setAttribute('fill', '#585850');
+  }
+}
+
+// ── BPM ───────────────────────────────────────────────────────────────────────
+function setBPM(val) {
+  bpm = val;
+  document.getElementById('bpm-val').textContent    = val;
+  document.getElementById('bpm-center').textContent = val;
+  document.getElementById('bpm-slider').value        = val;
+}
+
+// Tap tempo
+function tapTempo() {
+  const now = performance.now();
+  tapTimes.push(now);
+  if (tapTimes.length > 8) tapTimes.shift();
+  if (tapTimes.length > 1) {
+    const gaps = [];
+    for (let i = 1; i < tapTimes.length; i++) gaps.push(tapTimes[i] - tapTimes[i-1]);
+    const avg = gaps.reduce((s, g) => s + g, 0) / gaps.length;
+    const newBpm = Math.round(Math.min(220, Math.max(40, 60000 / avg)));
+    setBPM(newBpm);
+  }
+}
+
+// ── SVG rendering ─────────────────────────────────────────────────────────────
+const NS = 'http://www.w3.org/2000/svg';
+function mkEl(tag, attrs) {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function renderAgents() {
+  const layer = document.getElementById('agent-layer');
+  layer.innerHTML = '';
+
+  AGENTS.forEach((a, i) => {
+    const { x, y } = agentPos(i);
+    const circ = a.ringCirc = 2 * Math.PI * 34;
+
+    const g = mkEl('g', { cursor:'pointer' });
+    g.addEventListener('click', () => openPanel(a));
+
+    // Energy ring
+    const ring = mkEl('circle', {
+      cx:x, cy:y, r:34, fill:'none',
+      stroke: a.color, 'stroke-width':2,
+      'stroke-dasharray': `0 ${circ}`,
+      'stroke-dashoffset': circ * 0.25,   // start ring from top
+      opacity:0.7, 'stroke-linecap':'round',
+    });
+    a.ringEl = ring;
+    a.ringCirc = circ;
+
+    // Main circle
+    const circle = mkEl('circle', {
+      cx:x, cy:y, r:26, fill:a.color,
+      'fill-opacity':0.14, stroke:a.color,
+      'stroke-width':1.5, 'stroke-opacity':0.55,
+    });
+    a.circEl = circle;
+
+    // Name label
+    const lbl = mkEl('text', {
+      x, y: y + 4, 'text-anchor':'middle', fill:a.color,
+      'font-family':"'Courier New',monospace", 'font-size':9,
+      'letter-spacing':1, 'pointer-events':'none',
+    });
+    lbl.textContent = a.name.toUpperCase();
+
+    g.append(ring, circle, lbl);
+    layer.appendChild(g);
+  });
+}
+
+function renderConns() {
+  const layer = document.getElementById('conn-layer');
+  layer.innerHTML = '';
+  if (!document.getElementById('chk-conn').checked) return;
+
+  AGENTS.forEach((a, i) => {
+    const from = agentPos(i);
+    for (const [tid, str] of Object.entries(a.triggers)) {
+      const ti = AGENTS.findIndex(x => x.id === tid);
+      if (ti < 0) continue;
+      drawArrow(layer, from, agentPos(ti), `rgba(130,196,168,${0.2 + str * 0.4})`,
+                0.5 + str * 1.5, 'url(#arr-t)', false);
+    }
+    for (const [tid, str] of Object.entries(a.suppresses)) {
+      const ti = AGENTS.findIndex(x => x.id === tid);
+      if (ti < 0) continue;
+      drawArrow(layer, from, agentPos(ti), `rgba(196,130,130,${0.15 + str * 0.35})`,
+                0.5 + str * 1.5, 'url(#arr-s)', true);
+    }
+  });
+}
+
+function drawArrow(layer, f, t, color, w, marker, dashed) {
+  const dx = t.x - f.x, dy = t.y - f.y, d = Math.sqrt(dx*dx + dy*dy);
+  const r = 29;
+  const line = mkEl('line', {
+    x1: f.x + dx/d*r, y1: f.y + dy/d*r,
+    x2: t.x - dx/d*r, y2: t.y - dy/d*r,
+    stroke:color, 'stroke-width':w, 'marker-end':marker,
+  });
+  if (dashed) line.setAttribute('stroke-dasharray', '4 3');
+  layer.appendChild(line);
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+function flash(a) {
+  if (!a.circEl) return;
+  a.circEl.setAttribute('fill-opacity', '0.75');
+  a.circEl.setAttribute('stroke-opacity', '1');
+  setTimeout(() => {
+    if (a.circEl) {
+      a.circEl.setAttribute('fill-opacity', '0.14');
+      a.circEl.setAttribute('stroke-opacity', '0.55');
+    }
+  }, 130);
+}
+
+function animLoop() {
+  AGENTS.forEach(a => {
+    if (!a.ringEl) return;
+    const e   = a.energy;
+    const arc = e * a.ringCirc;
+    a.ringEl.setAttribute('stroke-dasharray', `${arc} ${a.ringCirc - arc}`);
+    a.ringEl.setAttribute('opacity', 0.08 + e * 0.65);
+  });
+  requestAnimationFrame(animLoop);
+}
+
+// ── Beat pips ─────────────────────────────────────────────────────────────────
+function updatePips(beat) {
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById('pip' + i);
+    if (el) el.classList.toggle('on', i === beat);
+  }
+  const bc = document.getElementById('bar-center');
+  if (bc) bc.textContent = beat >= 0 ? ['●','','',''][beat] + ' ' + (beat + 1) + ' / 4' : '—';
+}
+
+// ── Agent panel ───────────────────────────────────────────────────────────────
+function openPanel(a) {
+  selAgent = a;
+  const p  = document.getElementById('agent-panel');
+  p.classList.add('on');
+
+  document.getElementById('panel-name').textContent  = a.name;
+  document.getElementById('panel-name').style.color  = a.color;
+  document.getElementById('panel-note').textContent  =
+    'MIDI ' + a.note + '  ch ' + a.channel;
+
+  const setSlider = (id, val) => {
+    const el = document.getElementById(id);
+    el.value = val;
+    el.style.accentColor = a.color;
+  };
+  setSlider('sld-rate',      a.rate);      document.getElementById('panel-rate-val').textContent      = a.rate + ' b';
+  setSlider('sld-jitter',    a.jitter);    document.getElementById('panel-jitter-val').textContent    = a.jitter.toFixed(2);
+  setSlider('sld-threshold', a.threshold); document.getElementById('panel-threshold-val').textContent = a.threshold.toFixed(2);
+  setSlider('sld-er',        a.energyRate);document.getElementById('panel-er-val').textContent        = a.energyRate.toFixed(3);
+  setSlider('sld-vel',       a.vel);       document.getElementById('panel-vel-val').textContent       = a.vel;
+
+  // Connections
+  let html = '';
+  for (const [tid, s] of Object.entries(a.triggers))
+    html += `<div class="rel-row">→ <span class="trg">${byId(tid)?.name || tid}</span> +${s.toFixed(2)}</div>`;
+  for (const [tid, s] of Object.entries(a.suppresses))
+    html += `<div class="rel-row">⊗ <span class="sup">${byId(tid)?.name || tid}</span> −${s.toFixed(2)}</div>`;
+  if (!html) html = '<div class="rel-row" style="color:#333">none</div>';
+  document.getElementById('panel-rels').innerHTML = html;
+
+  // Mute button
+  const mb = document.getElementById('mute-btn');
+  mb.classList.toggle('muted', a.muted);
+  mb.textContent = a.muted ? 'unmute' : 'mute';
+}
+
+function setAgentProp(prop, val, displayId, suffix) {
+  if (!selAgent) return;
+  selAgent[prop] = val;
+  const display = prop === 'energyRate' ? val.toFixed(3)
+                : prop === 'rate'       ? val + ' b'
+                : Number.isInteger(val) ? val
+                : val.toFixed(2);
+  document.getElementById(displayId).textContent = display + suffix;
+}
+
+function toggleMute() {
+  if (!selAgent) return;
+  selAgent.muted = !selAgent.muted;
+  const mb = document.getElementById('mute-btn');
+  mb.classList.toggle('muted', selAgent.muted);
+  mb.textContent = selAgent.muted ? 'unmute' : 'mute';
+}
+
+function closePanel() {
+  document.getElementById('agent-panel').classList.remove('on');
+  selAgent = null;
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+renderAgents();
+renderConns();
+animLoop();
+initMIDI();
+</script>
+</body>
+</html>
