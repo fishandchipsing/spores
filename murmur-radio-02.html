@@ -1835,6 +1835,17 @@ function scheduleWeatherDrift() {
 // acoustic/tonal trace, as if the world itself resonates.
 // ═══════════════════════════════════════════════════════════
 
+// Per-world shadow character — controls tempo, sustain, and post-event linger
+const SHADOW_CHAR = {
+  //                decayMult  spacingMult  noteBonus  lingerN  lingerBase  lingerSpread  lingerDecay
+  water:  { decayMult: 3.5, spacingMult: 2.4, noteBonus: -1, lingerN: 3, lingerBase: 8,  lingerSpread: 18, lingerDecay: 9.0 },
+  forest: { decayMult: 1.5, spacingMult: 1.1, noteBonus:  0, lingerN: 2, lingerBase: 5,  lingerSpread: 8,  lingerDecay: 2.8 },
+  city:   { decayMult: 0.6, spacingMult: 0.5, noteBonus:  2, lingerN: 1, lingerBase: 3,  lingerSpread: 4,  lingerDecay: 1.0 },
+};
+function _wChar()    { return SHADOW_CHAR[S.world] || SHADOW_CHAR.forest; }
+function _wDecay(s)  { return s * _wChar().decayMult; }
+function _wSpace(s)  { return s * _wChar().spacingMult; }
+
 // World fundamentals and inharmonic series (slightly detuned partials = organic)
 const WORLD_RESONANCE = {
   water:  { f0: 63,  series: [1, 2.02, 2.97, 4.03, 5.01, 6.05] },
@@ -1877,7 +1888,7 @@ function _shadowBloom(dir, vol, register) {
   const n = 2 + (Math.random() < 0.4 ? 1 : 0);
   for (let i = 0; i < n; i++) {
     const f = freqs[Math.min(freqs.length - 1, offset + i)];
-    _shadowTone(f, vol * (1 - i * 0.28), 0.08 + i * 0.04, 1.6 + Math.random() * 1.4,
+    _shadowTone(f, vol * (1 - i * 0.28), 0.08 + i * 0.04, _wDecay(1.6 + Math.random() * 1.4),
                 Math.max(-1, Math.min(1, panVal + i * 0.1 - 0.1)));
   }
 }
@@ -1890,7 +1901,7 @@ function _shadowConverge(dir, vol, tension) {
   const f1 = freqs[1 + Math.floor(Math.random() * 3)];
   const detuneHz = 2.5 + tension * 4.5;
   const f2 = f1 + detuneHz;
-  const dur = 2.8 + Math.random() * 1.8;
+  const dur = _wDecay(2.8 + Math.random() * 1.8);
   [[f1, panVal - 0.14], [f2, panVal + 0.14]].forEach(([startF, pan], idx) => {
     const osc = ctx.createOscillator(); osc.type = 'sine';
     osc.frequency.setValueAtTime(startF, ctx.currentTime);
@@ -1911,9 +1922,9 @@ function _shadowCluster(dir, vol, tension) {
   const panVal = _panVal(dir);
   const f = freqs[Math.min(2, Math.floor(1 + tension * 2))];
   const wave = _shadowWave(); // world-appropriate timbre — no sawtooth buzz
-  _shadowTone(f,                       vol,        0.025, 0.55, panVal - 0.2, wave);
-  _shadowTone(f * Math.pow(2, 1/12),   vol * 0.72, 0.030, 0.48, panVal,       wave);
-  _shadowTone(f * Math.pow(2, 6/12),   vol * 0.52, 0.035, 0.70, panVal + 0.2, wave);
+  _shadowTone(f,                       vol,        0.025, _wDecay(0.55), panVal - 0.2, wave);
+  _shadowTone(f * Math.pow(2, 1/12),   vol * 0.72, 0.030, _wDecay(0.48), panVal,       wave);
+  _shadowTone(f * Math.pow(2, 6/12),   vol * 0.52, 0.035, _wDecay(0.70), panVal + 0.2, wave);
 }
 
 // SWEEP — noise through a bandpass that moves across frequency space (shift)
@@ -1941,7 +1952,7 @@ function _shadowSweep(dir, vol, tension) {
 function _shadowResidue(dir, vol, register) {
   const freqs = _worldFreqs();
   const f = freqs[1 + Math.floor(register * 2)];
-  _shadowTone(f, vol * 0.55, 0.55, 5.5 + Math.random() * 3, _panVal(dir));
+  _shadowTone(f, vol * 0.55, 0.55, _wDecay(5.5 + Math.random() * 3), _panVal(dir));
 }
 
 // SHIMMER — high partials only, very quiet (distant)
@@ -1950,7 +1961,7 @@ function _shadowShimmer(dir, vol, register) {
   const panVal = _panVal(dir);
   const high = freqs.slice(3);
   high.forEach((f, i) => {
-    _shadowTone(f, vol * (0.4 - i * 0.08), 0.2, 2.5 + Math.random(), panVal + (i-1)*0.12);
+    _shadowTone(f, vol * (0.4 - i * 0.08), 0.2, _wDecay(2.5 + Math.random()), panVal + (i-1)*0.12);
   });
 }
 
@@ -1966,10 +1977,35 @@ function _shadowDrift(dir, vol, activity) {
   const env = ctx.createGain(); env.gain.value = 0;
   const pan = ctx.createStereoPanner(); pan.pan.value = panVal;
   osc.connect(env); env.connect(pan); pan.connect(shadowGain);
-  const now = ctx.currentTime, dur = 2.2 + Math.random() * 1.2;
+  const now = ctx.currentTime, dur = _wDecay(2.2 + Math.random() * 1.2);
   env.gain.setTargetAtTime(vol, now, 0.2);
   env.gain.setTargetAtTime(0.0001, now + dur * 0.55, 0.5);
   osc.start(now); osc.stop(now + dur + 0.5);
+}
+
+// LINGER — soft harmonic echoes that drift into the silence after each event.
+// Keeps the shadow layer present even when Claude hasn't fired anything new.
+// Water: 3 echoes over 8–25s, very long ring. City: 1 quick echo. Forest: 2 medium.
+function _shadowLinger(dir, vol) {
+  if (!ctx || !shadowGain || !S.running) return;
+  const c = _wChar();
+  const freqs = _worldFreqs();
+  const midis = _harmCurrent != null ? _getHarmMidis(_harmCurrent).slice(0, 4) : null;
+  const panBase = _panVal(dir);
+
+  for (let i = 0; i < c.lingerN; i++) {
+    const delayMs = (c.lingerBase + Math.random() * c.lingerSpread + i * (c.lingerBase * 0.6)) * 1000;
+    setTimeout(() => {
+      if (!S.running || !ctx || !shadowGain) return;
+      // Pick a note — from harmony chord if available, else from world series
+      const f = midis
+        ? _harmMidiToHz(midis[Math.floor(Math.random() * midis.length)])
+        : freqs[1 + Math.floor(Math.random() * 3)];
+      const lingerVol = vol * (0.18 - i * 0.04);    // fades with each echo
+      const pan = Math.max(-1, Math.min(1, panBase + (Math.random() - 0.5) * 0.4));
+      _shadowTone(f, lingerVol, 0.3, c.lingerDecay * (0.8 + Math.random() * 0.5), pan);
+    }, delayMs);
+  }
 }
 
 // Master shadow dispatcher — called from fireEvent after each world event
@@ -2008,6 +2044,8 @@ function playShadow(ev) {
     }
     // Forest: scatter high plings after every shadow event
     if (S.world === 'forest') _forestPlings(dir, baseVol * 0.45);
+    // Schedule lingering echoes into the silence that follows
+    _shadowLinger(dir, baseVol);
     debugLine('shadow', ev.type + ' · ' + dir);
   }, delay);
 }
@@ -2129,8 +2167,32 @@ function playShadowPhrase(bufDuration, direction, evType) {
       ];
   }
 
-  notes.forEach(({ t, freq, vol, decay }, i) => {
-    const panShift = (i - (notes.length - 1) / 2) * 0.09;
+  // Apply world character to spacing and decay, and clamp note count
+  const char = _wChar();
+  // Scale time offsets and decays by world multipliers
+  const scaledNotes = notes.map(n => ({
+    ...n,
+    t:     n.t * char.spacingMult,
+    decay: n.decay * char.decayMult,
+  }));
+  // City gets extra notes appended (faster repetition); water may drop the last
+  let finalNotes = scaledNotes;
+  if (char.noteBonus > 0 && hFreqs.length > 2) {
+    for (let b = 0; b < char.noteBonus; b++) {
+      const last = scaledNotes[scaledNotes.length - 1];
+      finalNotes = [...finalNotes, {
+        t:     last.t + (0.18 + Math.random() * 0.22) * char.spacingMult,
+        freq:  hFreqs[(b + 1) % hFreqs.length],
+        vol:   last.vol * 0.7,
+        decay: last.decay * 0.6,
+      }];
+    }
+  } else if (char.noteBonus < 0 && finalNotes.length > 1) {
+    finalNotes = finalNotes.slice(0, finalNotes.length + char.noteBonus);
+  }
+
+  finalNotes.forEach(({ t, freq, vol, decay }, i) => {
+    const panShift = (i - (finalNotes.length - 1) / 2) * 0.09;
     _shadowTone(
       freq, bVol * vol,
       0.04, decay,
@@ -2140,7 +2202,10 @@ function playShadowPhrase(bufDuration, direction, evType) {
     );
   });
 
-  debugLine('shadow', `phrase·${evType}·${notes.length}n·${d.toFixed(1)}s`);
+  // Schedule lingering echoes into the silence after the phrase ends
+  _shadowLinger(direction || 'all around', bVol * 0.8);
+
+  debugLine('shadow', `phrase·${evType}·${finalNotes.length}n·${d.toFixed(1)}s`);
 }
 
 // World-appropriate waveform for shadow tones.
