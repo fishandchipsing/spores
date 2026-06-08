@@ -2211,9 +2211,12 @@ function playShadowPhrase(bufDuration, direction, evType) {
 // World-appropriate waveform for shadow tones.
 // water  → sine    (pure resonance, long sustained)
 // forest → triangle (organic, woody, odd harmonics only)
-// city   → square   (urban, mechanical, buzzy — filtered below so not too harsh)
+// forest → sawtooth (bowed string body) — shaped by cello bus (220Hz bump + 680Hz LP)
+// city   → sine     (clean, minimal)
 function _shadowWave() {
-  return { water:'sine', forest:'triangle', city:'sine' }[S.world] || 'sine';
+  // forest: sawtooth (full harmonic series like a bowed string) — shaped by the
+  // cello bus filter (220Hz body bump + 680Hz lowpass) into something warm and woody
+  return { water:'sine', forest:'sawtooth', city:'sine' }[S.world] || 'sine';
 }
 
 function startShadowBus() {
@@ -2231,9 +2234,12 @@ function startShadowBus() {
     hs.type = 'highshelf'; hs.frequency.value = 1400; hs.gain.value = 2.5;
     shadowGain.connect(hs); hs.connect(masterGain);
   } else if (S.world === 'forest') {
+    // Cello-like bus: sawtooth → body bump → hard low-pass to kill metallic highs
+    const body = ctx.createBiquadFilter();
+    body.type = 'peaking'; body.frequency.value = 220; body.Q.value = 1.4; body.gain.value = 5;
     const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 1800; lp.Q.value = 0.6;
-    shadowGain.connect(lp); lp.connect(masterGain);
+    lp.type = 'lowpass'; lp.frequency.value = 680; lp.Q.value = 0.7;
+    shadowGain.connect(body); body.connect(lp); lp.connect(masterGain);
   } else {
     shadowGain.connect(masterGain);
   }
