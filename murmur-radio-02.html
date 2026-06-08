@@ -2465,6 +2465,82 @@ function _scheduleMelodyPhrase() {
 }
 
 
+// ═══════════════════════════════════════════════════════════
+// CITY TEXTURE — car whooshes + continuous harmonic fill
+// Independent of narrative events. Gives city its restless
+// sonic density between Claude events.
+// ═══════════════════════════════════════════════════════════
+let _cityAmbientTimer   = null;
+let _cityFillTimer      = null;
+
+function startCityTexture() {
+  stopCityTexture();
+  _scheduleCityWhoosh();
+  _scheduleCityFill();
+}
+
+function stopCityTexture() {
+  clearTimeout(_cityAmbientTimer);
+  clearTimeout(_cityFillTimer);
+  _cityAmbientTimer = null;
+  _cityFillTimer    = null;
+}
+
+function _scheduleCityWhoosh() {
+  if (S.world !== 'city' || !S.running) return;
+  const delay = 3500 + Math.random() * 9000;
+  _cityAmbientTimer = setTimeout(() => { _carWhoosh(); _scheduleCityWhoosh(); }, delay);
+}
+
+function _carWhoosh() {
+  if (!ctx || !ghostMasterGain) return;
+  const fromLeft = Math.random() < 0.5;
+  const dur = 1.0 + Math.random() * 0.8;
+  const now = ctx.currentTime;
+  const s   = ctx.createBufferSource();
+  s.buffer  = _mkNoiseBuf(dur + 0.3, 'pink');
+  const bp  = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(fromLeft ? 550 : 1400, now);
+  bp.frequency.linearRampToValueAtTime(fromLeft ? 1400 : 550, now + dur);
+  const pan = ctx.createStereoPanner();
+  pan.pan.setValueAtTime(fromLeft ? -1.0 : 1.0, now);
+  pan.pan.linearRampToValueAtTime(fromLeft ? 1.0 : -1.0, now + dur);
+  const env = ctx.createGain();
+  s.connect(bp); bp.connect(env); env.connect(pan); pan.connect(ghostMasterGain);
+  const peakVol = 0.12 + Math.random() * 0.10;
+  env.gain.setValueAtTime(0, now);
+  env.gain.linearRampToValueAtTime(peakVol, now + dur * 0.35);
+  env.gain.setTargetAtTime(0, now + dur * 0.55, 0.18);
+  s.start(now); s.stop(now + dur + 0.4);
+}
+
+// Light harmonic fill — 2-3 soft chord tones every 2-4s.
+// Not tied to events; keeps the city shadow layer continuously alive.
+function _scheduleCityFill() {
+  if (S.world !== 'city' || !S.running || !ctx) return;
+  const delay = (2.0 + (1 - VIBE.activity) * 2.0 + Math.random() * 1.5) * 1000;
+  _cityFillTimer = setTimeout(() => {
+    if (S.world === 'city' && S.running && _harmCurrent != null) _playCityFill();
+    _scheduleCityFill();
+  }, delay);
+}
+
+function _playCityFill() {
+  if (!ctx || !shadowGain) return;
+  const midis = _getHarmMidis(_harmCurrent).slice(0, 4);
+  const n     = 2 + (Math.random() < 0.5 ? 1 : 0);
+  const vol   = 0.055 + VIBE.activity * 0.04;
+  const pan   = (Math.random() - 0.5) * 0.7;
+  const now   = ctx.currentTime;
+  for (let i = 0; i < n; i++) {
+    const midi  = midis[Math.floor(Math.random() * midis.length)];
+    const freq  = _harmMidiToHz(midi);
+    const t     = now + i * (0.10 + Math.random() * 0.12);
+    _shadowTone(freq, vol * (1 - i * 0.25), 0.012, 0.7 + Math.random() * 0.6,
+                Math.max(-1, Math.min(1, pan + (i - 1) * 0.15)), null, t);
+  }
+}
+
 function startMood(world) {
   stopMood();
   if (!ctx) return;
@@ -2498,6 +2574,7 @@ function startMood(world) {
   _playHarmChord(cfg.prog[0]);
   _scheduleNextChord();
   _scheduleMelodyPhrase();
+  if (world === 'city') startCityTexture();
 }
 
 function stopMood() {
@@ -2505,6 +2582,7 @@ function stopMood() {
   clearTimeout(_harmTimer);
   clearTimeout(_melodyPhraseTimer);
   clearTimeout(_cityPulseTimer);
+  stopCityTexture();
   _stopHarmOscs(0.8);
   if (moodGain)   { moodGain.disconnect();   moodGain = null; }
   if (_harmConv)  { _harmConv.disconnect();  _harmConv = null; }
