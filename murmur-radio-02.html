@@ -1025,7 +1025,7 @@ RULES: 1 sentence — only what is heard. Evolve agent states. Rain and wind onl
     label: 'forest',
     weathers: ['dry still','overcast','light rain','heavy rain','after rain','frost'],
     times:    ['pre-dawn','dawn chorus','morning','midday','afternoon','dusk','night'],
-    ambient: { noiseColor:'brown', rumble:{freq:90,gain:0.04}, shimmer:{freq:1800,q:0.5,gain:0.012}, lfo:{rate:0.05,depth:0.22} },
+    ambient: { noiseColor:'pink', rumble:{freq:160,gain:0.04}, shimmer:{freq:600,q:2.2,gain:0.012}, lfo:{rate:0.05,depth:0.22} },
     agents: [
       { id:'woodpecker',   label:'woodpecker',   desc:'drums hard against dead wood in short bursts, stops abruptly, listens, drums again — territorial against any answering tap', state:'drumming high up' },
       { id:'owl',          label:'owl',           desc:'nocturnal — territorial hoot carries far through still air, silent flight, hunts only at dusk and night. Daytime: completely silent', state:'roosting, silent' },
@@ -1267,11 +1267,16 @@ function startAmbient(world) {
   noiseSource.start(); noiseSource2.start(); lfoNode.start(); lfoNode2.start();
 
   if (world === 'forest') {
-    // Forest: near-silence between gusts — wind scheduler takes over dynamics
+    // Forest: override the bass lowshelf — we want no oceanic rumble, just air
+    ls.type = 'highpass'; ls.frequency.value = 180; ls.gain.value = 0;
+    // Tighter bandpass for focused whoosh (Q already set from profile, just confirm)
+    noiseFilter.Q.value = 2.2;
+    // Near-silence between gusts — wind scheduler takes over dynamics
     lfoGain.gain.value = 0.012;   // tiny continuous shimmer only
     ambGain.gain.setValueAtTime(0.02, ctx.currentTime);
     lg2.gain.setValueAtTime(0.01, ctx.currentTime);
     _startForestWind();
+    _startForestCrackle();
   } else {
     ambGain.gain.setTargetAtTime(0.55, ctx.currentTime, 2.5);
     lg2.gain.setTargetAtTime(0.32, ctx.currentTime, 3.5);
@@ -1321,22 +1326,74 @@ function _playForestGust() {
   ambGain.gain.setValueAtTime(peak,            now + riseTime + holdTime);
   ambGain.gain.linearRampToValueAtTime(0.02,   now + total);
 
-  // Filter sweep: starts low (200 Hz — deep rumble) → rises as wind peaks
-  // (800-1600 Hz airy rush) → falls back as it fades
+  // Filter sweep: starts at low rumble → rises as wind peaks (airy rush) → fades back
   if (noiseFilter) {
-    const hiFreq = 700 + Math.random() * 900;  // peak varies per gust
+    const hiFreq = 1400 + Math.random() * 1100;  // 1400–2500 Hz at peak — more airy rush
     noiseFilter.frequency.cancelScheduledValues(now);
-    noiseFilter.frequency.setValueAtTime(220,     now);
+    noiseFilter.frequency.setValueAtTime(200,     now);
     noiseFilter.frequency.linearRampToValueAtTime(hiFreq, now + riseTime + holdTime);
-    noiseFilter.frequency.linearRampToValueAtTime(180,    now + total);
+    noiseFilter.frequency.linearRampToValueAtTime(200,    now + total);
   }
 
   return total;
+}
+// ── Forest leaf crackle ──────────────────────────────────────────────────
+// Short bursts of high-frequency white noise: dry leaves, twigs, small debris.
+// Fires randomly, sometimes in tight clusters of 2-4 crackles.
+let _forestCrackleTimer = null;
+
+function _startForestCrackle() {
+  clearTimeout(_forestCrackleTimer);
+  _scheduleForestCrackle();
+}
+
+function _stopForestCrackle() {
+  clearTimeout(_forestCrackleTimer);
+  _forestCrackleTimer = null;
+}
+
+function _scheduleForestCrackle() {
+  if (!S.running || S.world !== 'forest' || !ctx) return;
+  // Base interval 0.4–2.8s; occasional longer gap for silence
+  const gap = Math.random() < 0.15
+    ? 4000 + Math.random() * 6000          // 15% chance: long pause (leaf-fall silence)
+    : 400  + Math.random() * 2400;
+  _forestCrackleTimer = setTimeout(() => {
+    _playLeafCrackle();
+    // 35% chance of a tight cluster (2-3 more crackles in quick succession)
+    if (Math.random() < 0.35) {
+      const n = 1 + Math.floor(Math.random() * 2);
+      for (let i = 1; i <= n; i++) {
+        setTimeout(_playLeafCrackle, i * (30 + Math.random() * 80));
+      }
+    }
+    _scheduleForestCrackle();
+  }, gap);
+}
+
+function _playLeafCrackle() {
+  if (!ctx || !ambGain) return;
+  const dur   = 0.012 + Math.random() * 0.030;  // 12–42 ms burst
+  const buf   = _mkNoiseBuf(dur + 0.02, 'white');
+  const src   = ctx.createBufferSource(); src.buffer = buf;
+  const hp    = ctx.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 4500 + Math.random() * 2000; hp.Q.value = 0.8;
+  const env   = ctx.createGain(); env.gain.value = 0;
+  const pan   = ctx.createStereoPanner();
+  pan.pan.value = (Math.random() - 0.5) * 1.4;  // wide stereo scatter
+  src.connect(hp); hp.connect(env); env.connect(pan); pan.connect(ambGain);
+  const vol = 0.18 + Math.random() * 0.22;
+  const now = ctx.currentTime;
+  env.gain.setValueAtTime(0, now);
+  env.gain.linearRampToValueAtTime(vol, now + 0.002);
+  env.gain.linearRampToValueAtTime(0, now + dur);
+  src.start(now); src.stop(now + dur + 0.04);
 }
 // ─────────────────────────────────────────────────────────────────────────
 
 function stopAmbient() {
   _stopForestWind();
+  _stopForestCrackle();
   try { noiseSource  && noiseSource.stop();  } catch(e){}
   try { noiseSource2 && noiseSource2.stop(); } catch(e){}
   try { lfoNode      && lfoNode.stop();      } catch(e){}
